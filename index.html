@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>نظام إدارة حلقات القرآن الكريم</title>
+  <title>نظام إدارة حلقات القرآن الكريم الاحترافي</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -391,7 +391,6 @@
 
       return (
         <div className="space-y-6">
-          {/* كروت الإحصائيات العامة */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
               <span className="text-2xl">🕌</span>
@@ -415,7 +414,6 @@
             </div>
           </div>
 
-          {/* لوحة التحكم بالمستخدمين */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border space-y-4">
             <div className="flex flex-wrap justify-between items-center gap-2 border-b pb-4">
               <div>
@@ -503,17 +501,18 @@
       const [absentStudents, setAbsentStudents] = React.useState({});
       const [activeModalStudent, setActiveModalStudent] = React.useState(null);
 
-      const role = (userProfile.role || 'viewer').toLowerCase();
-      const canEdit = role === 'admin' || role === 'supervisor';
+      // إصلاح فحص الصلاحيات بشكل مرن
+      const userRole = (userProfile && userProfile.role ? userProfile.role : 'viewer').toLowerCase();
+      const canEdit = userRole === 'admin' || userRole === 'supervisor';
 
       React.useEffect(() => {
         const unsub = db.collection('circles').onSnapshot(snap => {
           let list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           
-          if (role === 'supervisor') {
+          if (userRole === 'supervisor') {
             const myMasjid = userProfile.masjidId || 'جامع حمود الناصر';
             list = list.filter(c => !c.masjidId || c.masjidId === myMasjid);
-          } else if (role === 'admin' && selectedMasjidFilter !== 'ALL') {
+          } else if (userRole === 'admin' && selectedMasjidFilter !== 'ALL') {
             list = list.filter(c => c.masjidId === selectedMasjidFilter);
           }
 
@@ -525,7 +524,7 @@
           }
         });
         return () => unsub();
-      }, [userProfile, role, selectedMasjidFilter]);
+      }, [userProfile, userRole, selectedMasjidFilter]);
 
       React.useEffect(() => {
         if (!selectedCircleId) { 
@@ -574,18 +573,36 @@
         };
       }, [selectedCircleId, date]);
 
+      // إصلاح دالة إضافة الحلقة المباشرة
       const addCircle = async () => {
-        if (!canEdit || !newCircleName.trim()) return;
-        const targetMasjid = role === 'admin' 
-          ? (selectedMasjidFilter === 'ALL' ? 'جامع حمود الناصر' : selectedMasjidFilter)
-          : (userProfile.masjidId || 'جامع حمود الناصر');
+        if (!newCircleName.trim()) {
+          return alert("يرجى إدخال اسم الحلقة أولاً!");
+        }
+        if (!canEdit) {
+          return alert("حسابك لا يمتلك صلاحية إضافة حلقة!");
+        }
 
-        await db.collection('circles').add({ 
-          name: newCircleName.trim(), 
-          masjidId: targetMasjid,
-          createdBy: userProfile.username 
-        });
-        setNewCircleName('');
+        try {
+          let assignedMasjid = "جامع حمود الناصر";
+          if (userRole === 'supervisor' && userProfile.masjidId) {
+            assignedMasjid = userProfile.masjidId;
+          } else if (userRole === 'admin' && selectedMasjidFilter !== 'ALL') {
+            assignedMasjid = selectedMasjidFilter;
+          }
+
+          const docRef = await db.collection('circles').add({ 
+            name: newCircleName.trim(), 
+            masjidId: assignedMasjid,
+            createdBy: userProfile.username || userProfile.email,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+
+          setSelectedCircleId(docRef.id);
+          setNewCircleName('');
+          alert("تمت إضافة الحلقة بنجاح! 🎉");
+        } catch (e) {
+          alert("خطأ أثناء إضافة الحلقة: " + e.message);
+        }
       };
 
       const editCircleName = async (circle) => {
@@ -603,10 +620,28 @@
         setSelectedCircleId('');
       };
 
+      // إصلاح دالة إضافة الطالب
       const addStudent = async () => {
-        if (!canEdit || !newStudentName.trim() || !selectedCircleId) return;
-        await db.collection('students').add({ name: newStudentName.trim(), circleId: selectedCircleId });
-        setNewStudentName('');
+        if (!newStudentName.trim()) {
+          return alert("يرجى إدخال اسم الطالب!");
+        }
+        if (!selectedCircleId) {
+          return alert("يرجى اختيار حلقة أولاً قبل إضافة طالب!");
+        }
+        if (!canEdit) {
+          return alert("حسابك لا يمتلك صلاحية إضافة طالب!");
+        }
+
+        try {
+          await db.collection('students').add({ 
+            name: newStudentName.trim(), 
+            circleId: selectedCircleId,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          setNewStudentName('');
+        } catch (e) {
+          alert("خطأ أثناء إضافة الطالب: " + e.message);
+        }
       };
 
       const deleteStudent = async (id) => {
@@ -724,7 +759,7 @@
 
           {/* ترويسة اختيار المسجد والحلقة */}
           <div className="bg-white p-5 rounded-2xl shadow-sm space-y-4 border border-gray-200">
-            {role === 'admin' && (
+            {userRole === 'admin' && (
               <div className="flex items-center gap-2 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
                 <span className="text-xs font-black text-emerald-900">🌐 تصفح بصلاحية المطور:</span>
                 <select 
@@ -741,7 +776,7 @@
             <div className="flex flex-wrap gap-2 items-center">
               <label className="text-xs font-bold text-gray-700">اختر الحلقة القرآنية:</label>
               <select value={selectedCircleId} onChange={e => setSelectedCircleId(e.target.value)} className="flex-1 min-w-[200px] p-2 border rounded-xl text-sm font-bold bg-gray-50 focus:bg-white outline-none">
-                {circles.length === 0 ? <option>لا يوجد حلقات متاحة حالياً</option> : circles.map(c => <option key={c.id} value={c.id}>{c.name} ({c.masjidId || 'مسجد عام'})</option>)}
+                {circles.length === 0 ? <option value="">لا يوجد حلقات متاحة حالياً</option> : circles.map(c => <option key={c.id} value={c.id}>{c.name} ({c.masjidId || 'مسجد عام'})</option>)}
               </select>
 
               {canEdit && selectedCircleObj && (
@@ -754,8 +789,14 @@
 
             {canEdit && (
               <div className="flex gap-2 pt-2 border-t">
-                <input type="text" placeholder="اسم حلقة جديدة" value={newCircleName} onChange={e => setNewCircleName(e.target.value)} className="flex-1 p-2 border rounded-xl text-sm focus:ring-2 ring-emerald-500 outline-none" />
-                <button onClick={addCircle} className="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow hover:bg-emerald-800 transition">+ إضافة حلقة</button>
+                <input 
+                  type="text" 
+                  placeholder="اسم حلقة جديدة" 
+                  value={newCircleName} 
+                  onChange={e => setNewCircleName(e.target.value)} 
+                  className="flex-1 p-2 border rounded-xl text-sm focus:ring-2 ring-emerald-500 outline-none" 
+                />
+                <button onClick={addCircle} type="button" className="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow hover:bg-emerald-800 transition">+ إضافة حلقة</button>
               </div>
             )}
 
@@ -787,8 +828,14 @@
             
             {canEdit && (
               <div className="flex gap-2">
-                <input type="text" placeholder="اسم طالب جديد" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="flex-1 p-2 border rounded-xl text-sm focus:ring-2 ring-emerald-500 outline-none" />
-                <button onClick={addStudent} className="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow hover:bg-emerald-800 transition">+ إضافة طالب</button>
+                <input 
+                  type="text" 
+                  placeholder="اسم طالب جديد" 
+                  value={newStudentName} 
+                  onChange={e => setNewStudentName(e.target.value)} 
+                  className="flex-1 p-2 border rounded-xl text-sm focus:ring-2 ring-emerald-500 outline-none" 
+                />
+                <button onClick={addStudent} type="button" className="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow hover:bg-emerald-800 transition">+ إضافة طالب</button>
               </div>
             )}
 
