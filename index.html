@@ -3,27 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>نظام إدارة حلقات القرآن</title>
-  <!-- Tailwind CSS للتصميم -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>نظام إدارة حلقات القرآن الكريم</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- Babel لقراءة كود React -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
   <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
 </head>
-<body class="bg-slate-100 font-sans">
+<body class="bg-gray-100 min-h-screen text-gray-800 font-sans">
   <div id="root"></div>
 
   <script type="text/babel">
     // ==========================================
-    // 1. ضع إعدادات Firebase الخاصة بك هنا
+    // 1. إعدادات Firebase
     // ==========================================
-    const firebaseConfig = {
+   const firebaseConfig = {
   apiKey: "AIzaSyBCzlYbSq6ocwpDzhEeEZr0eDrg6cM3ecc",
   authDomain: "hamod-naser.firebaseapp.com",
   projectId: "hamod-naser",
@@ -33,34 +32,49 @@
   measurementId: "G-YTXZNQ59QR"
 };
 
-    // تهيئة Firebase
-    firebase.initializeApp(firebaseConfig);
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
     const auth = firebase.auth();
     const db = firebase.firestore();
 
     const JUZ_AMMA = [
-      'النبأ', 'النازعات', 'عبس', 'التكوير', 'الانفطار', 'المطففين',
-      'الانشقاق', 'البروج', 'الطارق', 'الأعلى', 'الغاشية', 'الفجر',
-      'البلد', 'الشمس', 'الليل', 'الضحى', 'الشرح', 'التين',
-      'العلق', 'القدر', 'البينة', 'الزلزلة', 'العاديات', 'القارعة',
-      'التكاثر', 'العصر', 'الهمزة', 'الفيل', 'قريش', 'الماعون',
-      'الكوثر', 'الكافرون', 'النصر', 'المسد', 'الإخلاص', 'الفلق', 'الناس'
+      'النبأ', 'النازعات', 'عبس', 'التكوير', 'الانفطار', 'المطففين', 'الانشقاق', 'البروج', 
+      'الطارق', 'الأعلى', 'الغاشية', 'الفجر', 'البلد', 'الشمس', 'الليل', 'الضحى', 
+      'الشرح', 'التين', 'العلق', 'القدر', 'البينة', 'الزلزلة', 'العاديات', 'القارعة', 
+      'التكاثر', 'العصر', 'الهمزة', 'الفيل', 'قريش', 'الماعون', 'الكوثر', 'الكافرون', 
+      'النصر', 'المسد', 'الإخلاص', 'الفلق', 'الناس'
     ];
 
     function App() {
       const [user, setUser] = React.useState(null);
-      const [email, setEmail] = React.useState('');
-      const [password, setPassword] = React.useState('');
-      const [isRegistering, setIsRegistering] = React.useState(false);
+      const [loading, setLoading] = React.useState(true);
 
       React.useEffect(() => {
-        return auth.onAuthStateChanged((u) => setUser(u));
+        const unsubscribe = auth.onAuthStateChanged((u) => {
+          setUser(u);
+          setLoading(false);
+        });
+        return () => unsubscribe();
       }, []);
 
-      const handleAuth = async (e) => {
+      if (loading) return <div className="flex justify-center items-center h-screen text-emerald-800 font-bold">جاري التحميل...</div>;
+
+      return user ? <Dashboard user={user} /> : <AuthScreen />;
+    }
+
+    // ==========================================
+    // 2. شاشة تسجيل الدخول
+    // ==========================================
+    function AuthScreen() {
+      const [email, setEmail] = React.useState('');
+      const [password, setPassword] = React.useState('');
+      const [isSignUp, setIsSignUp] = React.useState(false);
+
+      const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-          if (isRegistering) {
+          if (isSignUp) {
             await auth.createUserWithEmailAndPassword(email, password);
           } else {
             await auth.signInWithEmailAndPassword(email, password);
@@ -70,213 +84,266 @@
         }
       };
 
-      if (!user) {
-        return (
-          <div className="min-h-screen flex items-center justify-center p-4">
-            <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md">
-              <h2 className="text-2xl font-bold text-center text-emerald-800 mb-6">🕌 نظام إدارة حلقات القرآن</h2>
-              <form onSubmit={handleAuth} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">البريد الإلكتروني</label>
-                  <input type="email" required className="w-full mt-1 p-2 border rounded-md" value={email} onChange={e => setEmail(e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">كلمة المرور</label>
-                  <input type="password" required className="w-full mt-1 p-2 border rounded-md" value={password} onChange={e => setPassword(e.target.value)} />
-                </div>
-                <button type="submit" className="w-full bg-emerald-600 text-white py-2 rounded-md font-bold hover:bg-emerald-700">
-                  {isRegistering ? 'إنشاء حساب جديد' : 'تسجيل الدخول'}
-                </button>
-              </form>
-              <button onClick={() => setIsRegistering(!isRegistering)} className="w-full text-center text-sm text-emerald-600 mt-4 underline">
-                {isRegistering ? 'لديك حساب؟ سجل دخولك' : 'حساب جديد؟ اضغط هنا'}
+      return (
+        <div className="flex items-center justify-center min-h-screen p-4">
+          <div className="bg-white p-8 rounded-2xl shadow-md max-w-sm w-full space-y-4">
+            <h2 className="text-xl font-bold text-center text-emerald-800">🕌 نظام إدارة حلقات القرآن</h2>
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">البريد الإلكتروني</label>
+                <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full p-2 border rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">كلمة المرور</label>
+                <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="w-full p-2 border rounded-lg text-sm" />
+              </div>
+              <button type="submit" className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold shadow hover:bg-emerald-700">
+                {isSignUp ? 'إنشاء حساب جديد' : 'تسجيل الدخول'}
               </button>
-            </div>
+            </form>
+            <button onClick={() => setIsSignUp(!isSignUp)} className="w-full text-xs text-emerald-700 underline text-center block">
+              {isSignUp ? 'لديك حساب؟ سجل دخولك' : 'حساب جديد؟ اضغط هنا'}
+            </button>
           </div>
-        );
-      }
-
-      return <Dashboard user={user} />;
+        </div>
+      );
     }
 
+    // ==========================================
+    // 3. لوحة التحكم الرئيسية (حفظ تزامني وتراكمي)
+    // ==========================================
     function Dashboard({ user }) {
       const [circles, setCircles] = React.useState([]);
       const [selectedCircleId, setSelectedCircleId] = React.useState('');
-      const [students, setStudents] = React.useState([]);
       const [newCircleName, setNewCircleName] = React.useState('');
+      const [students, setStudents] = React.useState([]);
       const [newStudentName, setNewStudentName] = React.useState('');
-      const [curriculum, setCurriculum] = React.useState('');
-      const [selectedStudent, setSelectedStudent] = React.useState(null);
-      const [reportText, setReportText] = React.useState('');
-      const [showReport, setShowReport] = React.useState(false);
+      const [date, setDate] = React.useState(new Date().toISOString().split('T')[0]);
+      const [activeModalStudent, setActiveModalStudent] = React.useState(null);
+      const [historyStudent, setHistoryStudent] = React.useState(null);
 
-      const todayDate = new Date().toISOString().split('T')[0];
-
+      // جلب الحلقات الخاصة بالمشرف في الوقت الفعلي
       React.useEffect(() => {
-        return db.collection('circles').where('supervisorId', '==', user.uid).onSnapshot(snap => {
-          const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setCircles(list);
-          if (list.length > 0 && !selectedCircleId) setSelectedCircleId(list[0].id);
-        });
-      }, [user.uid]);
+        const unsub = db.collection('circles')
+          .where('userId', '==', user.uid)
+          .onSnapshot(snap => {
+            const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setCircles(list);
+            if (list.length > 0 && !selectedCircleId) setSelectedCircleId(list[0].id);
+          });
+        return () => unsub();
+      }, [user]);
 
+      // جلب طلاب الحلقة المحددة
       React.useEffect(() => {
-        if (!selectedCircleId) return;
-        const unsub1 = db.collection('students').where('circleId', '==', selectedCircleId).onSnapshot(snap => {
-          setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        });
-        const unsub2 = db.collection('curriculums').where('circleId', '==', selectedCircleId).where('date', '==', todayDate).onSnapshot(snap => {
-          setCurriculum(snap.empty ? '' : snap.docs[0].data().content);
-        });
-        return () => { unsub1(); unsub2(); };
-      }, [selectedCircleId, todayDate]);
+        if (!selectedCircleId) { setStudents([]); return; }
+        const unsub = db.collection('students')
+          .where('circleId', '==', selectedCircleId)
+          .onSnapshot(snap => {
+            setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          });
+        return () => unsub();
+      }, [selectedCircleId]);
 
       const addCircle = async () => {
         if (!newCircleName.trim()) return;
-        await db.collection('circles').add({ name: newCircleName.trim(), supervisorId: user.uid });
+        await db.collection('circles').add({ name: newCircleName.trim(), userId: user.uid });
         setNewCircleName('');
       };
 
       const addStudent = async () => {
         if (!newStudentName.trim() || !selectedCircleId) return;
-        await db.collection('students').add({ name: newStudentName.trim(), circleId: selectedCircleId, supervisorId: user.uid });
+        await db.collection('students').add({ name: newStudentName.trim(), circleId: selectedCircleId });
         setNewStudentName('');
       };
 
       const deleteStudent = async (id) => {
-        if (confirm('حذف هذا الطالب؟')) await db.collection('students').doc(id).delete();
-      };
-
-      const saveCurriculum = async () => {
-        await db.collection('curriculums').doc(`${selectedCircleId}_${todayDate}`).set({ circleId: selectedCircleId, date: todayDate, content: curriculum });
-        alert('تم حفظ المقرر');
-      };
-
-      const generateReport = async () => {
-        const circle = circles.find(c => c.id === selectedCircleId);
-        let text = `🕌 *تقرير حلقة: ${circle ? circle.name : ''}*\n📅 *التاريخ:* ${todayDate}\n\n`;
-        if (curriculum.trim()) text += `📚 *المقرر النظرية اليومي:*\n${curriculum}\n-----------------------------------\n`;
-        text += `👥 *تقييم الطلاب اليومي:*\n\n`;
-
-        for (let i = 0; i < students.length; i++) {
-          const s = students[i];
-          text += `${i + 1}️⃣ *الطالب:* ${s.name}\n`;
-          const snap = await db.collection('evaluations').where('studentId', '==', s.id).where('date', '==', todayDate).get();
-          if (snap.empty) {
-            text += `   • لم يتم التسميع اليوم.\n`;
-          } else {
-            snap.forEach(doc => {
-              const d = doc.data();
-              text += `   • *الحفظ:* سورة ${d.surah} (${d.rating})\n   • *السلوك:* ${d.behavior}\n`;
-            });
-          }
-          text += `\n`;
+        if (confirm("هل أنت تأكد من حذف هذا الطالب؟")) {
+          await db.collection('students').doc(id).delete();
         }
-        text += `-----------------------------------\nجزاكم الله خيراً وبارك في أبنائكم 🌹`;
-        setReportText(text);
-        setShowReport(true);
       };
 
       return (
-        <div className="p-4 max-w-3xl mx-auto space-y-4">
+        <div className="max-w-3xl mx-auto p-4 space-y-4">
           <header className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm">
-            <h1 className="font-bold text-lg text-emerald-800">نظام إدارة الحلقات</h1>
-            <button onClick={() => auth.signOut()} className="text-red-600 text-sm border p-1 rounded">خروج</button>
+            <h1 className="text-lg font-bold text-emerald-800">نظام إدارة الحلقات</h1>
+            <button onClick={() => auth.signOut()} className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-1 rounded-lg">خروج</button>
           </header>
 
+          {/* اختيار وإضافة الحلقات */}
           <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
-            <label className="block font-bold text-sm">اختر الحلقة:</label>
             <div className="flex gap-2">
-              <select value={selectedCircleId} onChange={e => setSelectedCircleId(e.target.value)} className="flex-1 p-2 border rounded-lg">
-                {circles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <select value={selectedCircleId} onChange={e => setSelectedCircleId(e.target.value)} className="flex-1 p-2 border rounded-lg text-sm font-bold">
+                {circles.length === 0 ? <option>لا يوجد حلقات - قم بإنشاء واحدة</option> : circles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-              <input type="text" placeholder="حلقة جديدة" value={newCircleName} onChange={e => setNewCircleName(e.target.value)} className="p-2 border rounded-lg text-sm" />
-              <button onClick={addCircle} className="bg-emerald-600 text-white px-3 rounded-lg text-sm font-bold">+ إضافة</button>
+              <input type="text" placeholder="اسم حلقة جديدة" value={newCircleName} onChange={e => setNewCircleName(e.target.value)} className="p-2 border rounded-lg text-sm w-1/3" />
+              <button onClick={addCircle} className="bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-bold shadow">+ إضافة</button>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 border-t">
+              <label className="text-xs font-bold text-gray-600">تاريخ اليوم:</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="p-1 border rounded text-xs font-bold" />
             </div>
           </div>
 
-          {selectedCircleId && (
-            <>
-              <div className="bg-white p-4 rounded-xl shadow-sm space-y-2">
-                <div className="flex justify-between"><span className="font-bold text-sm">📘 المقرر النظرية اليومي:</span><button onClick={saveCurriculum} className="text-xs bg-emerald-100 text-emerald-800 px-2 py-1 rounded font-bold">حفظ</button></div>
-                <textarea rows="2" value={curriculum} onChange={e => setCurriculum(e.target.value)} className="w-full p-2 border rounded-lg text-sm" placeholder="درس التجويد أو المواد النظرية..." />
-              </div>
+          {/* قائمة الطلاب والتقييم */}
+          <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
+            <h3 className="font-bold text-gray-700 text-sm">قائمة الطلاب ({students.length})</h3>
+            
+            <div className="flex gap-2">
+              <input type="text" placeholder="اسم طالب جديد" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="flex-1 p-2 border rounded-lg text-sm" />
+              <button onClick={addStudent} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow">+ إضافة طالب</button>
+            </div>
 
-              <div className="bg-white p-4 rounded-xl shadow-sm space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold">قائمة الطلاب ({students.length})</span>
+            <div className="divide-y pt-2">
+              {students.map(st => (
+                <div key={st.id} className="py-2 flex justify-between items-center">
+                  <span className="font-bold text-sm text-gray-800">{st.name}</span>
                   <div className="flex gap-2">
-                    <input type="text" placeholder="اسم الطالب" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="p-1 border rounded text-sm" />
-                    <button onClick={addStudent} className="bg-teal-600 text-white px-2 py-1 rounded text-sm font-bold">+ إضافة</button>
+                    <button onClick={() => setActiveModalStudent(st)} className="bg-emerald-50 text-emerald-700 border border-emerald-300 text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-600 hover:text-white transition">تقييم اليوم</button>
+                    <button onClick={() => setHistoryStudent(st)} className="bg-blue-50 text-blue-700 border border-blue-300 text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-blue-600 hover:text-white transition">سجل الطالب 📜</button>
+                    <button onClick={() => deleteStudent(st.id)} className="text-red-500 hover:text-red-700 text-xs px-1">حذف</button>
                   </div>
                 </div>
-                <div className="divide-y">
-                  {students.map((s, idx) => (
-                    <div key={s.id} className="py-2 flex justify-between items-center">
-                      <span className="cursor-pointer font-bold hover:text-emerald-600" onClick={() => setSelectedStudent(s)}>{idx + 1}. {s.name} <span className="text-xs text-gray-400">(اضغط للتقييم)</span></span>
-                      <button onClick={() => deleteStudent(s.id)} className="text-red-500 text-xs">حذف</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <button onClick={generateReport} className="w-full bg-green-600 text-white py-3 rounded-xl font-bold shadow hover:bg-green-700">📱 توليد تقرير الواتساب</button>
-            </>
-          )}
-
-          {selectedStudent && <EvalModal student={selectedStudent} date={todayDate} onClose={() => setSelectedStudent(null)} />}
-          {showReport && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
-              <div className="bg-white p-6 rounded-xl max-w-lg w-full space-y-3">
-                <h3 className="font-bold">تقرير الواتساب الجاهز</h3>
-                <textarea readOnly rows="10" value={reportText} className="w-full p-2 border rounded bg-slate-50 text-sm font-mono" />
-                <div className="flex gap-2">
-                  <button onClick={() => { navigator.clipboard.writeText(reportText); alert('تم النسخ!'); }} className="flex-1 bg-green-600 text-white py-2 rounded font-bold">نسخ النص</button>
-                  <button onClick={() => setShowReport(false)} className="bg-gray-200 px-4 rounded font-bold">إغلاق</button>
-                </div>
-              </div>
+              ))}
             </div>
-          )}
+          </div>
+
+          {/* النافذة المباشرة لتقييم الطالب */}
+          {activeModalStudent && <EvalModal student={activeModalStudent} date={date} onClose={() => setActiveModalStudent(null)} />}
+          
+          {/* النافذة الخاصة بتاريخ وسجل الطالب التراكمي */}
+          {historyStudent && <HistoryModal student={historyStudent} onClose={() => setHistoryStudent(null)} />}
         </div>
       );
     }
 
+    // ==========================================
+    // 4. نافذة التقييم الحفظ والسلوك
+    // ==========================================
     function EvalModal({ student, date, onClose }) {
       const [surah, setSurah] = React.useState(JUZ_AMMA[0]);
       const [rating, setRating] = React.useState('ممتاز');
       const [behavior, setBehavior] = React.useState('جيد');
+      const [saving, setSaving] = React.useState(false);
 
       const save = async () => {
-        await db.collection('evaluations').doc(`${student.id}_${date}_${surah}`).set({ studentId: student.id, date, surah, rating, behavior });
-        alert(`تم حفظ سورة ${surah}`);
+        setSaving(true);
+        try {
+          // حفظ التقييم بـ ID فريد يجمع التاريخ والطالب والسورة لتراكم البيانات دون ضياع
+          await db.collection('evaluations').add({
+            studentId: student.id,
+            studentName: student.name,
+            date,
+            surah,
+            rating,
+            behavior,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          alert(`تم حفظ تقييم ${student.name} لـ سورة ${surah} بنجاح!`);
+          onClose();
+        } catch(e) {
+          alert("خطأ أثناء الحفظ: " + e.message);
+        } finally {
+          setSaving(false);
+        }
       };
 
       return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white p-6 rounded-xl max-w-md w-full space-y-4">
-            <h3 className="font-bold text-emerald-800">تقييم: {student.name}</h3>
-            <select value={surah} onChange={e => setSurah(e.target.value)} className="w-full p-2 border rounded">
-              {JUZ_AMMA.map(s => <option key={s} value={s}>سورة {s}</option>)}
-            </select>
-            <div className="flex gap-1">
-              {['إعادة', 'جيد', 'جيد جداً', 'ممتاز'].map(r => (
-                <button key={r} onClick={() => setRating(r)} className={`flex-1 p-1 text-xs border rounded ${rating === r ? 'bg-emerald-600 text-white' : ''}`}>{r}</button>
-              ))}
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded-xl max-w-md w-full space-y-3">
+            <h3 className="font-bold text-emerald-800 text-base">تقييم الطالب: {student.name}</h3>
+            
+            <div>
+              <label className="block text-xs font-bold text-gray-600 mb-1">السورة:</label>
+              <select value={surah} onChange={e => setSurah(e.target.value)} className="w-full p-2 border rounded text-sm">
+                {JUZ_AMMA.map(s => <option key={s} value={s}>سورة {s}</option>)}
+              </select>
             </div>
-            <label className="block text-xs font-bold text-gray-600 mb-1">تقييم السلوك:</label>
-            <div className="flex gap-1">
-              {['جيد', 'بحاجة تحسين'].map(b => (
-                <button key={b} onClick={() => setBehavior(b)} className={`flex-1 p-1 text-xs border rounded ${behavior === b ? 'bg-emerald-600 text-white' : ''}`}>{b}</button>
-              ))}
+
+            <div>
+              <label className="block text-xs font-bold text-gray-600 mb-1">تقييم الحفظ:</label>
+              <div className="flex gap-1">
+                {['إعادة', 'جيد', 'جيد جداً', 'ممتاز'].map(r => (
+                  <button key={r} onClick={() => setRating(r)} className={`flex-1 p-2 text-xs border rounded font-bold ${rating === r ? 'bg-emerald-600 text-white' : 'bg-gray-50 text-gray-700'}`}>{r}</button>
+                ))}
+              </div>
             </div>
-            <button onClick={save} className="w-full bg-emerald-600 text-white py-2 rounded font-bold">حفظ التقييم</button>
-            <button onClick={onClose} className="w-full bg-gray-200 py-1 rounded text-sm">إغلاق</button>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-600 mb-1">تقييم السلوك:</label>
+              <div className="flex gap-1">
+                {['جيد', 'بحاجة تحسين'].map(b => (
+                  <button key={b} onClick={() => setBehavior(b)} className={`flex-1 p-2 text-xs border rounded font-bold ${behavior === b ? 'bg-emerald-600 text-white' : 'bg-gray-50 text-gray-700'}`}>{b}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-2 space-y-2">
+              <button disabled={saving} onClick={save} className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold shadow hover:bg-emerald-700 disabled:opacity-50">
+                {saving ? 'جاري الحفظ...' : 'حفظ التقييم'}
+              </button>
+              <button onClick={onClose} className="w-full bg-gray-100 text-gray-600 py-1.5 rounded-lg text-sm font-bold">إغلاق</button>
+            </div>
           </div>
         </div>
       );
     }
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    // ==========================================
+    // 5. نافذة استعراض سجل الطالب التراكمي التاريخي
+    // ==========================================
+    function HistoryModal({ student, onClose }) {
+      const [logs, setLogs] = React.useState([]);
+      const [loading, setLoading] = React.useState(true);
+
+      React.useEffect(() => {
+        db.collection('evaluations')
+          .where('studentId', '==', student.id)
+          .get()
+          .then(snap => {
+            const list = snap.docs.map(doc => doc.data());
+            // ترتيب السجلات حسب التاريخ من الأحدث للأقدم
+            list.sort((a, b) => new Date(b.date) - new Date(a.date));
+            setLogs(list);
+            setLoading(false);
+          });
+      }, [student]);
+
+      return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded-xl max-w-lg w-full space-y-4 max-h-[80vh] flex flex-col">
+            <h3 className="font-bold text-emerald-800 text-base border-b pb-2">📜 سجل وتقييمات الطالب: {student.name}</h3>
+            
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {loading ? (
+                <p className="text-center text-xs text-gray-500 py-4">جاري تحميل السجل...</p>
+              ) : logs.length === 0 ? (
+                <p className="text-center text-xs text-gray-500 py-4">لا يوجد تقييمات سابقة لهذا الطالب.</p>
+              ) : (
+                logs.map((item, idx) => (
+                  <div key={idx} className="bg-gray-50 p-3 rounded-lg border flex justify-between items-center text-xs">
+                    <div>
+                      <span className="font-bold block text-gray-700">سورة {item.surah}</span>
+                      <span className="text-gray-400">{item.date}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded font-bold">الحفظ: {item.rating}</span>
+                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-bold">السلوك: {item.behavior}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button onClick={onClose} className="w-full bg-gray-200 text-gray-800 py-2 rounded-lg font-bold text-sm">إغلاق</button>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
   </script>
 </body>
 </html>
