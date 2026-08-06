@@ -163,7 +163,7 @@
     }
 
     // ==========================================
-    // 4. لوحة التحكم الرئيسية (مشاركة الحلقات والبيانات للجميع)
+    // 4. لوحة التحكم الرئيسية (إدارة الحلقات والحضور والطلاب)
     // ==========================================
     function Dashboard({ user }) {
       const [circles, setCircles] = React.useState([]);
@@ -176,11 +176,14 @@
       // الدرس النظري
       const [lessonTopic, setLessonTopic] = React.useState('');
       
-      // التقييمات المحفوظة لليوم
+      // التقييمات والسجلات لليوم
       const [todayEvaluations, setTodayEvaluations] = React.useState([]);
+      // قائمة الطلاب الغائبين اليوم { [studentId]: true }
+      const [absentStudents, setAbsentStudents] = React.useState({});
+
       const [activeModalStudent, setActiveModalStudent] = React.useState(null);
 
-      // جلب **كافة الحلقات** دون ربطها بالمستخدم الحالي لتكون مشتركة للجميع
+      // جلب الحلقات
       React.useEffect(() => {
         const unsub = db.collection('circles')
           .onSnapshot(snap => {
@@ -193,12 +196,13 @@
         return () => unsub();
       }, []);
 
-      // جلب الطلاب والدرس والتقييمات الخاصة بالحلقة والتاريخ المحددين
+      // جلب الطلاب والدرس والتقييمات والسلوك والحضور الخاصة بالحلقة والتاريخ المحددين
       React.useEffect(() => {
         if (!selectedCircleId) { 
           setStudents([]); 
           setTodayEvaluations([]); 
           setLessonTopic('');
+          setAbsentStudents({});
           return; 
         }
 
@@ -214,7 +218,15 @@
           .where('circleId', '==', selectedCircleId)
           .where('date', '==', date)
           .onSnapshot(snap => {
-            setTodayEvaluations(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            const evals = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setTodayEvaluations(evals);
+            
+            // تحديث خريطة الغائبين بناءً على بيانات التقييم
+            const absentMap = {};
+            evals.forEach(e => {
+              if (e.isAbsent) absentMap[e.studentId] = true;
+            });
+            setAbsentStudents(absentMap);
           });
 
         // 3. الدرس النظري لليوم
@@ -277,6 +289,35 @@
         }
       };
 
+      // تبديل حالة الحضور والغياب للطالب
+      const toggleAttendance = async (student) => {
+        const isCurrentlyAbsent = !!absentStudents[student.id];
+        const newAbsentState = !isCurrentlyAbsent;
+
+        // التحديث المحلي
+        setAbsentStudents(prev => ({ ...prev, [student.id]: newAbsentState }));
+
+        // التحديث في قاعدة البيانات
+        const existingEval = todayEvaluations.find(e => e.studentId === student.id);
+        if (existingEval) {
+          await db.collection('evaluations').doc(existingEval.id).update({
+            isAbsent: newAbsentState
+          });
+        } else {
+          await db.collection('evaluations').add({
+            studentId: student.id,
+            studentName: student.name,
+            circleId: selectedCircleId,
+            circleName: selectedCircleObj ? selectedCircleObj.name : '',
+            date,
+            isAbsent: newAbsentState,
+            recitations: [],
+            behavior: 'جيد',
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+      };
+
       const saveLessonTopic = async (topicValue) => {
         setLessonTopic(topicValue);
         if (!selectedCircleId) return;
@@ -303,7 +344,7 @@
       const generateWhatsappText = () => {
         if (!selectedCircleObj) return '';
 
-        let text = `*تقرير حلقة: ${selectedCircleObj.name}*\n`;
+        let text = `السلام عليكم ورحمة الله وبركاته \n*تقرير حلقة: ${selectedCircleObj.name}*\n`;
         text += `*التاريخ:* ${date}\n`;
         if (lessonTopic.trim()) {
           text += `*الدرس النظري/التجويدي:* ${lessonTopic.trim()}\n`;
@@ -317,8 +358,14 @@
 
         students.forEach((st, idx) => {
           const evalDoc = todayEvaluations.find(e => e.studentId === st.id);
-          text += `${idx + 1}. *${st.name}*:\n`;
-          if (evalDoc) {
+          const isAbsent = absentStudents[st.id];
+
+          text += `${idx + 1}. *${st.name}*`;
+
+          if (isAbsent) {
+            text += ` *(غائب)*\n\n`;
+          } else if (evalDoc && !evalDoc.isAbsent) {
+            text += `:\n`;
             if (evalDoc.recitations && evalDoc.recitations.length > 0) {
               evalDoc.recitations.forEach(r => {
                 text += `  - سورة ${r.surah}: ${r.rating}\n`;
@@ -326,14 +373,13 @@
             } else if (evalDoc.surah) {
               text += `  - سورة ${evalDoc.surah}: ${evalDoc.rating}\n`;
             }
-            text += `  - السلوك: ${evalDoc.behavior}\n`;
+            text += `  - السلوك: ${evalDoc.behavior}\n\n`;
           } else {
-            text += `  - (غائب / لم يسمّع اليوم)\n`;
+            text += `:\n  - (حاضر - لم يسمّع اليوم)\n\n`;
           }
-          text += `\n`;
         });
 
-        text += `دعواتنا لكم بالتوفيق والنجاح 🌟`;
+        text += `جزاكم الله خيراً 🌟`;
         return text;
       };
 
@@ -389,7 +435,7 @@
             <p className="text-[11px] text-gray-400">يتم حفظ الدرس تلقائياً وسيظهر للجميع في التقرير اليومي.</p>
           </div>
 
-          {/* قائمة الطلاب */}
+          {/* قائمة الطلاب مع خانات الحضور والغياب */}
           <div className="bg-white p-4 rounded-xl shadow-sm space-y-3 border">
             <h3 className="font-bold text-gray-700 text-sm">قائمة الطلاب ({students.length})</h3>
             
@@ -401,20 +447,42 @@
             <div className="divide-y pt-2">
               {students.map(st => {
                 const evalDoc = todayEvaluations.find(e => e.studentId === st.id);
+                const isAbsent = !!absentStudents[st.id];
+
                 return (
-                  <div key={st.id} className="py-2.5 flex justify-between items-center">
-                    <div>
-                      <span className="font-bold text-sm text-gray-800 block">{st.name}</span>
-                      {evalDoc && (
-                        <span className="text-[11px] text-emerald-600 font-semibold block mt-0.5">
-                          ✓ تم التقييم لليوم
+                  <div key={st.id} className={`py-2.5 flex justify-between items-center ${isAbsent ? 'bg-red-50/50 px-2 rounded-lg' : ''}`}>
+                    <div className="flex items-center gap-3">
+                      {/* مربع اختيار الحضور والغياب */}
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={!isAbsent} 
+                          onChange={() => toggleAttendance(st)}
+                          className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
+                        />
+                        <span className={`text-xs font-bold ${isAbsent ? 'text-red-600' : 'text-emerald-700'}`}>
+                          {isAbsent ? 'غائب ❌' : 'حاضر ✓'}
                         </span>
-                      )}
+                      </label>
+
+                      <div>
+                        <span className={`font-bold text-sm ${isAbsent ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                          {st.name}
+                        </span>
+                        {evalDoc && !isAbsent && evalDoc.recitations && evalDoc.recitations.length > 0 && (
+                          <span className="text-[11px] text-emerald-600 font-semibold block mt-0.5">
+                            ✓ تم التقييم لليوم
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => setActiveModalStudent(st)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-700 shadow">
-                        {evalDoc ? 'تعديل التقييم 📝' : 'إضافة تقييم اليوم 📝'}
-                      </button>
+
+                    <div className="flex gap-2 items-center">
+                      {!isAbsent && (
+                        <button onClick={() => setActiveModalStudent(st)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-700 shadow">
+                          {evalDoc && evalDoc.recitations && evalDoc.recitations.length > 0 ? 'تعديل التقييم 📝' : 'إضافة تقييم اليوم 📝'}
+                        </button>
+                      )}
                       <button onClick={() => deleteStudent(st.id)} className="text-red-400 hover:text-red-600 text-xs px-1">حذف</button>
                     </div>
                   </div>
@@ -436,7 +504,7 @@
 
             <textarea 
               readOnly 
-              rows="7" 
+              rows="8" 
               value={generateWhatsappText()} 
               className="w-full p-3 border rounded-lg font-mono text-xs bg-gray-50 text-gray-700 leading-relaxed"
             />
@@ -462,7 +530,7 @@
     // ==========================================
     function EvalModal({ student, circleId, circleName, date, existingEval, onClose }) {
       const [recitations, setRecitations] = React.useState(
-        existingEval && existingEval.recitations 
+        existingEval && existingEval.recitations && existingEval.recitations.length > 0
           ? existingEval.recitations 
           : [{ surah: JUZ_AMMA[0], rating: 'ممتاز' }]
       );
@@ -491,6 +559,7 @@
             await db.collection('evaluations').doc(existingEval.id).update({
               recitations: recitations,
               behavior: behavior,
+              isAbsent: false,
               timestamp: firebase.firestore.FieldValue.serverTimestamp()
             });
           } else {
@@ -500,6 +569,7 @@
               circleId: circleId,
               circleName: circleName,
               date,
+              isAbsent: false,
               recitations: recitations,
               behavior: behavior,
               timestamp: firebase.firestore.FieldValue.serverTimestamp()
@@ -593,11 +663,12 @@
 
       // دالة حساب السلوك العام للطالب (الغالبية)
       const calculateGeneralBehavior = (studentEvals) => {
-        if (studentEvals.length === 0) return 'لا يوجد تقييمات';
+        const validEvals = studentEvals.filter(e => !e.isAbsent);
+        if (validEvals.length === 0) return 'لا يوجد تقييمات';
         let goodCount = 0;
         let needsImpCount = 0;
 
-        studentEvals.forEach(e => {
+        validEvals.forEach(e => {
           if (e.behavior === 'جيد') goodCount++;
           if (e.behavior === 'بحاجة تحسين') needsImpCount++;
         });
@@ -627,7 +698,7 @@
                     <p className="text-xs text-gray-400">لا يوجد طلاب مسجلون في هذه الحلقة.</p>
                   ) : (
                     circleStudents.map(student => {
-                      const studentEvals = evaluations.filter(e => e.studentId === student.id);
+                      const studentEvals = evaluations.filter(e => e.studentId === student.id && !e.isAbsent);
                       const generalBehavior = calculateGeneralBehavior(studentEvals);
 
                       return (
@@ -648,17 +719,17 @@
                               studentEvals.map((ev, i) => (
                                 <div key={i} className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-1 last:border-0">
                                   <span className="text-gray-400 font-mono">[{ev.date}]</span>
-                                  {ev.recitations ? (
+                                  {ev.recitations && ev.recitations.length > 0 ? (
                                     ev.recitations.map((r, rIdx) => (
                                       <span key={rIdx} className="bg-white px-2 py-0.5 border rounded font-semibold text-emerald-800">
                                         سورة {r.surah} ({r.rating})
                                       </span>
                                     ))
-                                  ) : (
+                                  ) : ev.surah ? (
                                     <span className="bg-white px-2 py-0.5 border rounded font-semibold text-emerald-800">
                                       سورة {ev.surah} ({ev.rating})
                                     </span>
-                                  )}
+                                  ) : null}
                                 </div>
                               ))
                             )}
