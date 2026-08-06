@@ -31,6 +31,7 @@
   appId: "1:337847802811:web:7e6c5989a4137310bc029e",
   measurementId: "G-YTXZNQ59QR"
 };
+
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
@@ -162,7 +163,7 @@
     }
 
     // ==========================================
-    // 4. لوحة التحكم الرئيسية (إدارة الحلقات والطلاب والدروس)
+    // 4. لوحة التحكم الرئيسية (مشاركة الحلقات والبيانات للجميع)
     // ==========================================
     function Dashboard({ user }) {
       const [circles, setCircles] = React.useState([]);
@@ -179,17 +180,18 @@
       const [todayEvaluations, setTodayEvaluations] = React.useState([]);
       const [activeModalStudent, setActiveModalStudent] = React.useState(null);
 
-      // جلب الحلقات
+      // جلب **كافة الحلقات** دون ربطها بالمستخدم الحالي لتكون مشتركة للجميع
       React.useEffect(() => {
         const unsub = db.collection('circles')
-          .where('userId', '==', user.uid)
           .onSnapshot(snap => {
             const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setCircles(list);
-            if (list.length > 0 && !selectedCircleId) setSelectedCircleId(list[0].id);
+            if (list.length > 0 && !selectedCircleId) {
+              setSelectedCircleId(list[0].id);
+            }
           });
         return () => unsub();
-      }, [user]);
+      }, []);
 
       // جلب الطلاب والدرس والتقييمات الخاصة بالحلقة والتاريخ المحددين
       React.useEffect(() => {
@@ -200,7 +202,7 @@
           return; 
         }
 
-        // 1. الطلاب
+        // 1. الطلاب في الحلقة
         const unsubStudents = db.collection('students')
           .where('circleId', '==', selectedCircleId)
           .onSnapshot(snap => {
@@ -236,7 +238,10 @@
 
       const addCircle = async () => {
         if (!newCircleName.trim()) return;
-        await db.collection('circles').add({ name: newCircleName.trim(), userId: user.uid });
+        await db.collection('circles').add({ 
+          name: newCircleName.trim(), 
+          createdBy: user.email || user.uid 
+        });
         setNewCircleName('');
       };
 
@@ -343,7 +348,7 @@
           {/* قسم اختيار وإدارة الحلقات والتاريخ */}
           <div className="bg-white p-4 rounded-xl shadow-sm space-y-3 border">
             <div className="flex flex-wrap gap-2 items-center">
-              <label className="text-xs font-bold text-gray-600">اختر الحلقة:</label>
+              <label className="text-xs font-bold text-gray-600">اختر الحلقة المشتركة:</label>
               <select value={selectedCircleId} onChange={e => setSelectedCircleId(e.target.value)} className="flex-1 min-w-[180px] p-2 border rounded-lg text-sm font-bold">
                 {circles.length === 0 ? <option>لا يوجد حلقات - قم بإنشاء واحدة</option> : circles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -381,7 +386,7 @@
               onChange={e => saveLessonTopic(e.target.value)}
               className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white" 
             />
-            <p className="text-[11px] text-gray-400">يتم حفظ الدرس تلقائياً وسيتم تضمينه في التقرير اليومي.</p>
+            <p className="text-[11px] text-gray-400">يتم حفظ الدرس تلقائياً وسيظهر للجميع في التقرير اليومي.</p>
           </div>
 
           {/* قائمة الطلاب */}
