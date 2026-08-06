@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>نظام إدارة حلقات القرآن الكريم - جامع حمود الناصر</title>
+  <title>نظام إدارة حلقات القرآن الكريم - المساجد</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -23,14 +23,14 @@
     // 1. إعدادات Firebase
     // ==========================================
     const firebaseConfig = {
-  apiKey: "AIzaSyBCzlYbSq6ocwpDzhEeEZr0eDrg6cM3ecc",
-  authDomain: "hamod-naser.firebaseapp.com",
-  projectId: "hamod-naser",
-  storageBucket: "hamod-naser.firebasestorage.app",
-  messagingSenderId: "337847802811",
-  appId: "1:337847802811:web:7e6c5989a4137310bc029e",
-  measurementId: "G-YTXZNQ59QR"
-};
+      apiKey: "AIzaSyBCzlYbSq6ocwpDzhEeEZr0eDrg6cM3ecc",
+      authDomain: "hamod-naser.firebaseapp.com",
+      projectId: "hamod-naser",
+      storageBucket: "hamod-naser.firebasestorage.app",
+      messagingSenderId: "337847802811",
+      appId: "1:337847802811:web:7e6c5989a4137310bc029e",
+      measurementId: "G-YTXZNQ59QR"
+    };
 
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
@@ -38,7 +38,6 @@
     const auth = firebase.auth();
     const db = firebase.firestore();
 
-    // دالة مساعدة لتنسيق التاريخ ليصبح (يوم/شهر/سنة)
     const formatDateToArabic = (dateString) => {
       if (!dateString) return '';
       const [year, month, day] = dateString.split('-');
@@ -53,13 +52,29 @@
       'النصر', 'المسد', 'الإخلاص', 'الفلق', 'الناس'
     ];
 
+    // ==========================================
+    // التطبيق الرئيسي مع جلب ملف المستخدم الأدوار
+    // ==========================================
     function App() {
       const [user, setUser] = React.useState(null);
+      const [userProfile, setUserProfile] = React.useState(null);
       const [loading, setLoading] = React.useState(true);
 
       React.useEffect(() => {
-        const unsubscribe = auth.onAuthStateChanged((u) => {
+        const unsubscribe = auth.onAuthStateChanged(async (u) => {
           setUser(u);
+          if (u) {
+            // جلب ملف المستخدم وصلاحياته
+            const docRef = db.collection('users').doc(u.uid);
+            const docSnap = await docRef.get();
+            if (docSnap.exists) {
+              setUserProfile(docSnap.data());
+            } else {
+              setUserProfile(null); // ينقله لإكمال المعرف الخاص
+            }
+          } else {
+            setUserProfile(null);
+          }
           setLoading(false);
         });
         return () => unsubscribe();
@@ -67,11 +82,87 @@
 
       if (loading) return <div className="flex justify-center items-center h-screen text-emerald-800 font-bold">جاري التحميل...</div>;
 
-      return user ? <MainLayout user={user} /> : <AuthScreen />;
+      if (!user) return <AuthScreen />;
+      if (user && !userProfile) return <OnboardingScreen user={user} onComplete={setUserProfile} />;
+
+      return <MainLayout user={user} userProfile={userProfile} />;
     }
 
     // ==========================================
-    // 2. شاشة تسجيل الدخول (مع خيار Google)
+    // 2. شاشة إكمال البيانات (إدخال المعرف الخاص أول مرة)
+    // ==========================================
+    function OnboardingScreen({ user, onComplete }) {
+      const [username, setUsername] = React.useState('');
+      const [error, setError] = React.useState('');
+      const [submitting, setSubmitting] = React.useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '_');
+        if (!cleanUsername) return setError("يرجى أدخال المعرّف الخاص");
+
+        setSubmitting(true);
+        setError('');
+
+        try {
+          // التحقق من عدم تكرار اسم المستخدم
+          const checkSnap = await db.collection('users').where('username', '==', cleanUsername).get();
+          if (!checkSnap.empty) {
+            setSubmitting(false);
+            return setError("هذا المعرّف مستخدم بالفعل! اختر معرفاً آخر.");
+          }
+
+          const profileData = {
+            uid: user.uid,
+            email: user.email,
+            username: cleanUsername,
+            role: 'viewer', // متصفح افتراضياً
+            masjidId: null,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          };
+
+          await db.collection('users').doc(user.uid).set(profileData);
+          onComplete(profileData);
+        } catch (err) {
+          setError("حدث خطأ: " + err.message);
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="flex items-center justify-center min-h-screen p-4">
+          <div className="bg-white p-8 rounded-2xl shadow-md max-w-sm w-full space-y-4">
+            <h2 className="text-xl font-bold text-center text-emerald-800">مرحباً بك! 👋</h2>
+            <p className="text-xs text-center text-gray-500">اختر معرفاً خاصاً بكتُميّز به في النظام (مثال: ahmed_homs)</p>
+            
+            {error && <div className="bg-red-50 text-red-600 text-xs p-2 rounded border border-red-200">{error}</div>}
+
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">المعرّف الخاص (Username)</label>
+                <div className="flex items-center border rounded-lg overflow-hidden bg-gray-50 px-2">
+                  <span className="text-gray-400 font-bold text-sm">@</span>
+                  <input 
+                    type="text" 
+                    required 
+                    placeholder="username"
+                    value={username} 
+                    onChange={e => setUsername(e.target.value)} 
+                    className="w-full p-2 bg-transparent text-sm focus:outline-none" 
+                  />
+                </div>
+              </div>
+              <button disabled={submitting} type="submit" className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold shadow hover:bg-emerald-700 disabled:opacity-50">
+                {submitting ? 'جاري الحفظ...' : 'حفظ واستكمال'}
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // 3. شاشة تسجيل الدخول
     // ==========================================
     function AuthScreen() {
       const [email, setEmail] = React.useState('');
@@ -103,10 +194,9 @@
       return (
         <div className="flex items-center justify-center min-h-screen p-4">
           <div className="bg-white p-8 rounded-2xl shadow-md max-w-sm w-full space-y-4">
-            <h2 className="text-xl font-bold text-center text-emerald-800">🕌 جامع حمود الناصر</h2>
-            <p className="text-xs text-center text-gray-500 font-bold">إدارة حلقات القرآن الكريم</p>
+            <h2 className="text-xl font-bold text-center text-emerald-800">🕌 نظام إدارة حلقات القرآن</h2>
+            <p className="text-xs text-center text-gray-500 font-bold">تسجيل الدخول للنظام العام</p>
             
-            {/* زر تسجيل الدخول بواسطة Google */}
             <button 
               onClick={handleGoogleSignIn}
               type="button"
@@ -149,42 +239,63 @@
     }
 
     // ==========================================
-    // 3. الهيكل الرئيسي مع الشريط العلوي
+    // 4. الهيكل الرئيسي مع الشريط العلوي
     // ==========================================
-    function MainLayout({ user }) {
+    function MainLayout({ user, userProfile }) {
       const [currentView, setCurrentView] = React.useState('dashboard');
+
+      const roleBadgeColor = {
+        admin: 'bg-red-500 text-white',
+        supervisor: 'bg-emerald-600 text-white',
+        viewer: 'bg-gray-500 text-white'
+      }[userProfile.role] || 'bg-gray-400 text-white';
+
+      const roleBadgeText = {
+        admin: 'مطور (Admin)',
+        supervisor: `مشرف (${userProfile.masjidId || 'غير محدد'})`,
+        viewer: 'متصفح'
+      }[userProfile.role];
 
       return (
         <div className="min-h-screen flex flex-col">
-          <header className="bg-emerald-800 text-white px-6 py-3 shadow-md flex justify-between items-center sticky top-0 z-40">
-            <div className="font-bold text-sm md:text-base flex items-center gap-2">
+          <header className="bg-emerald-800 text-white px-4 md:px-6 py-3 shadow-md flex justify-between items-center sticky top-0 z-40">
+            <div className="font-bold text-xs md:text-sm flex items-center gap-2">
               <span>🕌</span>
-              <span>جامع حمود الناصر</span>
+              <span>تطبيق الحلقات</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${roleBadgeColor}`}>
+                @{userProfile.username} ({roleBadgeText})
+              </span>
             </div>
-            
-            <h1 className="text-base md:text-lg font-bold text-emerald-100 hidden sm:block">
-             نظام إدارة حلقات القرآن الكريم
-            </h1>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {userProfile.role === 'admin' && (
+                <button 
+                  onClick={() => setCurrentView('users_admin')} 
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold shadow transition border ${currentView === 'users_admin' ? 'bg-amber-500 text-white border-amber-400' : 'bg-emerald-700 hover:bg-emerald-600 text-white border-emerald-500'}`}
+                >
+                  ⚙️ إدارة الصلاحيات
+                </button>
+              )}
+
               {currentView === 'dashboard' ? (
                 <button 
                   onClick={() => setCurrentView('global_db')} 
-                  className="bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold shadow transition flex items-center gap-1 border border-emerald-500"
+                  className="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold shadow transition border border-emerald-500"
                 >
-                  <span>📊</span> قاعدة البيانات التراكمية
+                  📊 البيانات التراكمية
                 </button>
               ) : (
                 <button 
                   onClick={() => setCurrentView('dashboard')} 
-                  className="bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold shadow transition flex items-center gap-1 border border-emerald-500"
+                  className="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold shadow transition border border-emerald-500"
                 >
-                  <span>🏠</span> إدارة الحلقات
+                  🏠 إدارة الحلقات
                 </button>
               )}
+              
               <button 
                 onClick={() => auth.signOut()} 
-                className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg font-bold shadow"
+                className="bg-red-600 hover:bg-red-700 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold shadow"
               >
                 خروج
               </button>
@@ -192,16 +303,89 @@
           </header>
 
           <main className="flex-1 max-w-4xl w-full mx-auto p-4">
-            {currentView === 'dashboard' ? <Dashboard user={user} /> : <GlobalDatabaseView />}
+            {currentView === 'dashboard' && <Dashboard userProfile={userProfile} />}
+            {currentView === 'global_db' && <GlobalDatabaseView />}
+            {currentView === 'users_admin' && userProfile.role === 'admin' && <AdminUsersPanel />}
           </main>
         </div>
       );
     }
 
     // ==========================================
-    // 4. لوحة التحكم الرئيسية
+    // 5. لوحة المطور (إدارة المستخدمين والأدوار)
     // ==========================================
-    function Dashboard({ user }) {
+    function AdminUsersPanel() {
+      const [usersList, setUsersList] = React.useState([]);
+      const [loading, setLoading] = React.useState(true);
+
+      React.useEffect(() => {
+        const unsub = db.collection('users').onSnapshot(snap => {
+          setUsersList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          setLoading(false);
+        });
+        return () => unsub();
+      }, []);
+
+      const updateUserRole = async (targetUid, newRole) => {
+        let masjidId = null;
+        if (newRole === 'supervisor') {
+          masjidId = prompt("أدخل اسم/معرف المسجد للمشرف (مثال: جامع حمود الناصر):", "جامع حمود الناصر");
+          if (!masjidId) return;
+        }
+
+        try {
+          await db.collection('users').doc(targetUid).update({
+            role: newRole,
+            masjidId: masjidId
+          });
+          alert("تم تحديث صلاحية المستخدم بنجاح!");
+        } catch (e) {
+          alert("خطأ أثناء التحديث: " + e.message);
+        }
+      };
+
+      if (loading) return <div className="text-center py-8 font-bold text-emerald-800">جاري تحميل قائمة المستخدمين...</div>;
+
+      return (
+        <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
+          <div className="border-b pb-3">
+            <h2 className="text-lg font-bold text-red-700 flex items-center gap-2">
+              ⚙️ لوحة المطور - توزيع الأدوار والصلاحيات
+            </h2>
+            <p className="text-xs text-gray-500">يمكنك ترقية المتصفحين إلى مشرفين وتحديد المسجد المخصص لهم</p>
+          </div>
+
+          <div className="divide-y">
+            {usersList.map(u => (
+              <div key={u.id} className="py-3 flex flex-wrap justify-between items-center gap-2">
+                <div>
+                  <div className="font-bold text-sm text-gray-800">@{u.username || 'بدون_معرف'}</div>
+                  <div className="text-xs text-gray-400">{u.email}</div>
+                  {u.masjidId && <div className="text-[11px] text-emerald-600 font-bold">المسجد: {u.masjidId}</div>}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select 
+                    value={u.role || 'viewer'} 
+                    onChange={e => updateUserRole(u.id, e.target.value)}
+                    className="p-1.5 border rounded-lg text-xs font-bold bg-gray-50"
+                  >
+                    <option value="viewer">متصفح (Viewer)</option>
+                    <option value="supervisor">مشرف (Supervisor)</option>
+                    <option value="admin">مطور (Admin)</option>
+                  </select>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ==========================================
+    // 6. لوحة التحكم الرئيسية (مع القيود حسب الصلاحية)
+    // ==========================================
+    function Dashboard({ userProfile }) {
       const [circles, setCircles] = React.useState([]);
       const [selectedCircleId, setSelectedCircleId] = React.useState('');
       const [newCircleName, setNewCircleName] = React.useState('');
@@ -214,17 +398,23 @@
       const [absentStudents, setAbsentStudents] = React.useState({});
       const [activeModalStudent, setActiveModalStudent] = React.useState(null);
 
+      const canEdit = userProfile.role === 'admin' || userProfile.role === 'supervisor';
+
       React.useEffect(() => {
         const unsub = db.collection('circles')
           .onSnapshot(snap => {
-            const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            let list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // إذا كان مشرفاً، يرى حلقات مسجده فقط (أو الكل إذا كان مطوراً أو متصفحاً)
+            if (userProfile.role === 'supervisor' && userProfile.masjidId) {
+              list = list.filter(c => !c.masjidId || c.masjidId === userProfile.masjidId);
+            }
             setCircles(list);
             if (list.length > 0 && !selectedCircleId) {
               setSelectedCircleId(list[0].id);
             }
           });
         return () => unsub();
-      }, []);
+      }, [userProfile]);
 
       React.useEffect(() => {
         if (!selectedCircleId) { 
@@ -274,15 +464,17 @@
       }, [selectedCircleId, date]);
 
       const addCircle = async () => {
-        if (!newCircleName.trim()) return;
+        if (!canEdit || !newCircleName.trim()) return;
         await db.collection('circles').add({ 
           name: newCircleName.trim(), 
-          createdBy: user.email || user.uid 
+          masjidId: userProfile.masjidId || 'عام',
+          createdBy: userProfile.username 
         });
         setNewCircleName('');
       };
 
       const editCircleName = async (circle) => {
+        if (!canEdit) return;
         const updated = prompt("أدخل الاسم الجديد للحلقة:", circle.name);
         if (updated && updated.trim()) {
           await db.collection('circles').doc(circle.id).update({ name: updated.trim() });
@@ -290,31 +482,27 @@
       };
 
       const deleteCircle = async (circle) => {
-        if (!confirm(`هل أنت تأكد من أنك تريد حذف حلقة (${circle.name})؟`)) return;
-        
-        const password = prompt("تنبيه أمني! أدخل كلمة المرور لتأكيد حذف الحلقة:");
-        if (password === "yesdelete") {
-          await db.collection('circles').doc(circle.id).delete();
-          setSelectedCircleId('');
-          alert("تم حذف الحلقة بنجاح.");
-        } else if (password !== null) {
-          alert("كلمة المرور خاطئة! تم إلغاء الحذف.");
-        }
+        if (!canEdit) return;
+        if (!confirm(`هل أنت تأكد من حذف حلقة (${circle.name})؟`)) return;
+        await db.collection('circles').doc(circle.id).delete();
+        setSelectedCircleId('');
       };
 
       const addStudent = async () => {
-        if (!newStudentName.trim() || !selectedCircleId) return;
+        if (!canEdit || !newStudentName.trim() || !selectedCircleId) return;
         await db.collection('students').add({ name: newStudentName.trim(), circleId: selectedCircleId });
         setNewStudentName('');
       };
 
       const deleteStudent = async (id) => {
+        if (!canEdit) return;
         if (confirm("هل أنت تأكد من حذف هذا الطالب؟")) {
           await db.collection('students').doc(id).delete();
         }
       };
 
       const toggleAttendance = async (student) => {
+        if (!canEdit) return;
         const isCurrentlyAbsent = !!absentStudents[student.id];
         const newAbsentState = !isCurrentlyAbsent;
 
@@ -342,7 +530,7 @@
 
       const saveLessonTopic = async (topicValue) => {
         setLessonTopic(topicValue);
-        if (!selectedCircleId) return;
+        if (!canEdit || !selectedCircleId) return;
         
         const snap = await db.collection('lessons')
           .where('circleId', '==', selectedCircleId)
@@ -412,14 +600,21 @@
 
       return (
         <div className="space-y-4">
+          {/* تنبيه للمتصفح العادي */}
+          {!canEdit && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl text-xs font-bold text-center">
+              👀 أنت تتصفح التطبيق بحساب (قراءة فقط). لتعديل أو إضافة حلقات، تواصل مع أدمن التطبيق لترقية حسابك إلى مشرف.
+            </div>
+          )}
+
           <div className="bg-white p-4 rounded-xl shadow-sm space-y-3 border">
             <div className="flex flex-wrap gap-2 items-center">
-              <label className="text-xs font-bold text-gray-600">اختر الحلقة المشتركة:</label>
+              <label className="text-xs font-bold text-gray-600">اختر الحلقة:</label>
               <select value={selectedCircleId} onChange={e => setSelectedCircleId(e.target.value)} className="flex-1 min-w-[180px] p-2 border rounded-lg text-sm font-bold">
-                {circles.length === 0 ? <option>لا يوجد حلقات - قم بإنشاء واحدة</option> : circles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {circles.length === 0 ? <option>لا يوجد حلقات متاحة</option> : circles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
 
-              {selectedCircleObj && (
+              {canEdit && selectedCircleObj && (
                 <div className="flex gap-1">
                   <button onClick={() => editCircleName(selectedCircleObj)} title="تعديل اسم الحلقة" className="bg-amber-50 text-amber-700 border border-amber-300 p-2 rounded-lg text-xs font-bold hover:bg-amber-100">✏️</button>
                   <button onClick={() => deleteCircle(selectedCircleObj)} title="حذف الحلقة" className="bg-red-50 text-red-700 border border-red-300 p-2 rounded-lg text-xs font-bold hover:bg-red-100">🗑️</button>
@@ -427,13 +622,15 @@
               )}
             </div>
 
-            <div className="flex gap-2 pt-2 border-t">
-              <input type="text" placeholder="اسم حلقة جديدة" value={newCircleName} onChange={e => setNewCircleName(e.target.value)} className="flex-1 p-2 border rounded-lg text-sm" />
-              <button onClick={addCircle} className="bg-emerald-700 text-white px-3 py-2 rounded-lg text-sm font-bold shadow hover:bg-emerald-800">+ إضافة حلقة</button>
-            </div>
+            {canEdit && (
+              <div className="flex gap-2 pt-2 border-t">
+                <input type="text" placeholder="اسم حلقة جديدة" value={newCircleName} onChange={e => setNewCircleName(e.target.value)} className="flex-1 p-2 border rounded-lg text-sm" />
+                <button onClick={addCircle} className="bg-emerald-700 text-white px-3 py-2 rounded-lg text-sm font-bold shadow hover:bg-emerald-800">+ إضافة حلقة</button>
+              </div>
+            )}
 
             <div className="flex items-center gap-2 pt-2 border-t">
-              <label className="text-xs font-bold text-gray-600">تاريخ التقييم اليومي:</label>
+              <label className="text-xs font-bold text-gray-600">التاريخ:</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} className="p-1.5 border rounded-lg text-xs font-bold" />
               <span className="text-xs text-gray-500 font-bold bg-gray-100 px-2 py-1 rounded">({formatDateToArabic(date)})</span>
             </div>
@@ -445,21 +642,23 @@
             </h3>
             <input 
               type="text" 
-              placeholder="مثال: أحكام النون الساكنة والتنوين - الإظهار" 
+              readOnly={!canEdit}
+              placeholder={canEdit ? "مثال: أحكام النون الساكنة والتنوين" : "لم يحدد درس اليوم بعد"} 
               value={lessonTopic} 
               onChange={e => saveLessonTopic(e.target.value)}
-              className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white" 
+              className={`w-full p-2 border rounded-lg text-sm ${canEdit ? 'bg-gray-50 focus:bg-white' : 'bg-gray-100 text-gray-600'}`}
             />
-            <p className="text-[11px] text-gray-400">يتم حفظ الدرس تلقائياً وسيظهر للجميع في التقرير اليومي.</p>
           </div>
 
           <div className="bg-white p-4 rounded-xl shadow-sm space-y-3 border">
             <h3 className="font-bold text-gray-700 text-sm">قائمة الطلاب ({students.length})</h3>
             
-            <div className="flex gap-2">
-              <input type="text" placeholder="اسم طالب جديد" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="flex-1 p-2 border rounded-lg text-sm" />
-              <button onClick={addStudent} className="bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow hover:bg-emerald-800">+ إضافة طالب</button>
-            </div>
+            {canEdit && (
+              <div className="flex gap-2">
+                <input type="text" placeholder="اسم طالب جديد" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="flex-1 p-2 border rounded-lg text-sm" />
+                <button onClick={addStudent} className="bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow hover:bg-emerald-800">+ إضافة طالب</button>
+              </div>
+            )}
 
             <div className="divide-y pt-2">
               {students.map(st => {
@@ -469,17 +668,23 @@
                 return (
                   <div key={st.id} className={`py-2.5 flex justify-between items-center ${isAbsent ? 'bg-red-50/50 px-2 rounded-lg' : ''}`}>
                     <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={!isAbsent} 
-                          onChange={() => toggleAttendance(st)}
-                          className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
-                        />
+                      {canEdit ? (
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={!isAbsent} 
+                            onChange={() => toggleAttendance(st)}
+                            className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
+                          />
+                          <span className={`text-xs font-bold ${isAbsent ? 'text-red-600' : 'text-emerald-700'}`}>
+                            {isAbsent ? 'غائب ❌' : 'حاضر ✓'}
+                          </span>
+                        </label>
+                      ) : (
                         <span className={`text-xs font-bold ${isAbsent ? 'text-red-600' : 'text-emerald-700'}`}>
                           {isAbsent ? 'غائب ❌' : 'حاضر ✓'}
                         </span>
-                      </label>
+                      )}
 
                       <div>
                         <span className={`font-bold text-sm ${isAbsent ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
@@ -494,12 +699,14 @@
                     </div>
 
                     <div className="flex gap-2 items-center">
-                      {!isAbsent && (
+                      {!isAbsent && canEdit && (
                         <button onClick={() => setActiveModalStudent(st)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-700 shadow">
                           {evalDoc && evalDoc.recitations && evalDoc.recitations.length > 0 ? 'تعديل التقييم 📝' : 'إضافة تقييم اليوم 📝'}
                         </button>
                       )}
-                      <button onClick={() => deleteStudent(st.id)} className="text-red-400 hover:text-red-600 text-xs px-1">حذف</button>
+                      {canEdit && (
+                        <button onClick={() => deleteStudent(st.id)} className="text-red-400 hover:text-red-600 text-xs px-1">حذف</button>
+                      )}
                     </div>
                   </div>
                 );
@@ -540,7 +747,7 @@
     }
 
     // ==========================================
-    // 5. نافذة إضافة تقييم
+    // 7. نافذة إضافة تقييم
     // ==========================================
     function EvalModal({ student, circleId, circleName, date, existingEval, onClose }) {
       const [recitations, setRecitations] = React.useState(
@@ -653,7 +860,7 @@
     }
 
     // ==========================================
-    // 6. لائحة البيانات العامة (قراءة فقط - التراكمية)
+    // 8. لائحة البيانات العامة (التراكمية)
     // ==========================================
     function GlobalDatabaseView() {
       const [circles, setCircles] = React.useState([]);
@@ -694,16 +901,17 @@
       return (
         <div className="space-y-6">
           <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl text-center">
-            <h2 className="text-lg font-bold text-emerald-900">📊 السجل التراكمي العام للمسجد</h2>
-            <p className="text-xs text-emerald-700 mt-1">عرض السور المسمّعة والسلوك العام لجميع الطلاب موزعين حسب الحلقات</p>
+            <h2 className="text-lg font-bold text-emerald-900">📊 السجل التراكمي العام للمساجد</h2>
+            <p className="text-xs text-emerald-700 mt-1">عرض السور المسمّعة والسلوك العام لجميع الطلاب</p>
           </div>
 
           {circles.map(circle => {
             const circleStudents = students.filter(s => s.circleId === circle.id);
             return (
               <div key={circle.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                <div className="bg-emerald-800 text-white px-4 py-2 font-bold text-sm">
-                  🕌 حلقة: {circle.name}
+                <div className="bg-emerald-800 text-white px-4 py-2 font-bold text-sm flex justify-between">
+                  <span>🕌 حلقة: {circle.name}</span>
+                  <span className="text-xs font-normal opacity-80">{circle.masjidId || 'مسجد عام'}</span>
                 </div>
 
                 <div className="p-4 space-y-4 divide-y">
