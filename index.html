@@ -22,7 +22,7 @@
     // ==========================================
     // 1. إعدادات Firebase
     // ==========================================
-   const firebaseConfig = {
+    const firebaseConfig = {
   apiKey: "AIzaSyBCzlYbSq6ocwpDzhEeEZr0eDrg6cM3ecc",
   authDomain: "hamod-naser.firebaseapp.com",
   projectId: "hamod-naser",
@@ -31,7 +31,6 @@
   appId: "1:337847802811:web:7e6c5989a4137310bc029e",
   measurementId: "G-YTXZNQ59QR"
 };
-
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
@@ -163,7 +162,7 @@
     }
 
     // ==========================================
-    // 4. لوحة التحكم الرئيسية (إدارة الحلقات والطلاب)
+    // 4. لوحة التحكم الرئيسية (إدارة الحلقات والطلاب والدروس)
     // ==========================================
     function Dashboard({ user }) {
       const [circles, setCircles] = React.useState([]);
@@ -172,6 +171,12 @@
       const [students, setStudents] = React.useState([]);
       const [newStudentName, setNewStudentName] = React.useState('');
       const [date, setDate] = React.useState(new Date().toISOString().split('T')[0]);
+      
+      // الدرس النظري
+      const [lessonTopic, setLessonTopic] = React.useState('');
+      
+      // التقييمات المحفوظة لليوم
+      const [todayEvaluations, setTodayEvaluations] = React.useState([]);
       const [activeModalStudent, setActiveModalStudent] = React.useState(null);
 
       // جلب الحلقات
@@ -186,16 +191,48 @@
         return () => unsub();
       }, [user]);
 
-      // جلب الطلاب
+      // جلب الطلاب والدرس والتقييمات الخاصة بالحلقة والتاريخ المحددين
       React.useEffect(() => {
-        if (!selectedCircleId) { setStudents([]); return; }
-        const unsub = db.collection('students')
+        if (!selectedCircleId) { 
+          setStudents([]); 
+          setTodayEvaluations([]); 
+          setLessonTopic('');
+          return; 
+        }
+
+        // 1. الطلاب
+        const unsubStudents = db.collection('students')
           .where('circleId', '==', selectedCircleId)
           .onSnapshot(snap => {
             setStudents(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
           });
-        return () => unsub();
-      }, [selectedCircleId]);
+
+        // 2. التقييمات اليومية
+        const unsubEvals = db.collection('evaluations')
+          .where('circleId', '==', selectedCircleId)
+          .where('date', '==', date)
+          .onSnapshot(snap => {
+            setTodayEvaluations(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          });
+
+        // 3. الدرس النظري لليوم
+        const unsubLesson = db.collection('lessons')
+          .where('circleId', '==', selectedCircleId)
+          .where('date', '==', date)
+          .onSnapshot(snap => {
+            if (!snap.empty) {
+              setLessonTopic(snap.docs[0].data().topic || '');
+            } else {
+              setLessonTopic('');
+            }
+          });
+
+        return () => {
+          unsubStudents();
+          unsubEvals();
+          unsubLesson();
+        };
+      }, [selectedCircleId, date]);
 
       const addCircle = async () => {
         if (!newCircleName.trim()) return;
@@ -235,11 +272,75 @@
         }
       };
 
+      const saveLessonTopic = async (topicValue) => {
+        setLessonTopic(topicValue);
+        if (!selectedCircleId) return;
+        
+        const snap = await db.collection('lessons')
+          .where('circleId', '==', selectedCircleId)
+          .where('date', '==', date)
+          .get();
+
+        if (snap.empty) {
+          await db.collection('lessons').add({
+            circleId: selectedCircleId,
+            date: date,
+            topic: topicValue
+          });
+        } else {
+          await db.collection('lessons').doc(snap.docs[0].id).update({ topic: topicValue });
+        }
+      };
+
       const selectedCircleObj = circles.find(c => c.id === selectedCircleId);
+
+      // توليد نص الواتساب الجاهز للنسخ
+      const generateWhatsappText = () => {
+        if (!selectedCircleObj) return '';
+
+        let text = `*تقرير حلقة: ${selectedCircleObj.name}*\n`;
+        text += `*التاريخ:* ${date}\n`;
+        if (lessonTopic.trim()) {
+          text += `*الدرس النظري/التجويدي:* ${lessonTopic.trim()}\n`;
+        }
+        text += `-----------------------------------\n\n`;
+
+        if (students.length === 0) {
+          text += `لا يوجد طلاب مسجلون في هذه الحلقة.`;
+          return text;
+        }
+
+        students.forEach((st, idx) => {
+          const evalDoc = todayEvaluations.find(e => e.studentId === st.id);
+          text += `${idx + 1}. *${st.name}*:\n`;
+          if (evalDoc) {
+            if (evalDoc.recitations && evalDoc.recitations.length > 0) {
+              evalDoc.recitations.forEach(r => {
+                text += `  - سورة ${r.surah}: ${r.rating}\n`;
+              });
+            } else if (evalDoc.surah) {
+              text += `  - سورة ${evalDoc.surah}: ${evalDoc.rating}\n`;
+            }
+            text += `  - السلوك: ${evalDoc.behavior}\n`;
+          } else {
+            text += `  - (غائب / لم يسمّع اليوم)\n`;
+          }
+          text += `\n`;
+        });
+
+        text += `دعواتنا لكم بالتوفيق والنجاح 🌟`;
+        return text;
+      };
+
+      const copyWhatsappText = () => {
+        const text = generateWhatsappText();
+        navigator.clipboard.writeText(text);
+        alert("تم نسخ التقرير النصي بنجاح! يمكنك الآن لصقه في الواتساب.");
+      };
 
       return (
         <div className="space-y-4">
-          {/* قسم الحلقات والتاريخ */}
+          {/* قسم اختيار وإدارة الحلقات والتاريخ */}
           <div className="bg-white p-4 rounded-xl shadow-sm space-y-3 border">
             <div className="flex flex-wrap gap-2 items-center">
               <label className="text-xs font-bold text-gray-600">اختر الحلقة:</label>
@@ -268,6 +369,21 @@
             </div>
           </div>
 
+          {/* قسم الدروس النظرية */}
+          <div className="bg-white p-4 rounded-xl shadow-sm space-y-2 border">
+            <h3 className="font-bold text-emerald-800 text-sm flex items-center gap-1">
+              📚 الدرس النظري / التجويدي لليوم
+            </h3>
+            <input 
+              type="text" 
+              placeholder="مثال: أحكام النون الساكنة والتنوين - الإظهار" 
+              value={lessonTopic} 
+              onChange={e => saveLessonTopic(e.target.value)}
+              className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white" 
+            />
+            <p className="text-[11px] text-gray-400">يتم حفظ الدرس تلقائياً وسيتم تضمينه في التقرير اليومي.</p>
+          </div>
+
           {/* قائمة الطلاب */}
           <div className="bg-white p-4 rounded-xl shadow-sm space-y-3 border">
             <h3 className="font-bold text-gray-700 text-sm">قائمة الطلاب ({students.length})</h3>
@@ -278,16 +394,47 @@
             </div>
 
             <div className="divide-y pt-2">
-              {students.map(st => (
-                <div key={st.id} className="py-2.5 flex justify-between items-center">
-                  <span className="font-bold text-sm text-gray-800">{st.name}</span>
-                  <div className="flex gap-2">
-                    <button onClick={() => setActiveModalStudent(st)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-700 shadow">إضافة تقييم اليوم 📝</button>
-                    <button onClick={() => deleteStudent(st.id)} className="text-red-400 hover:text-red-600 text-xs px-1">حذف</button>
+              {students.map(st => {
+                const evalDoc = todayEvaluations.find(e => e.studentId === st.id);
+                return (
+                  <div key={st.id} className="py-2.5 flex justify-between items-center">
+                    <div>
+                      <span className="font-bold text-sm text-gray-800 block">{st.name}</span>
+                      {evalDoc && (
+                        <span className="text-[11px] text-emerald-600 font-semibold block mt-0.5">
+                          ✓ تم التقييم لليوم
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setActiveModalStudent(st)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-700 shadow">
+                        {evalDoc ? 'تعديل التقييم 📝' : 'إضافة تقييم اليوم 📝'}
+                      </button>
+                      <button onClick={() => deleteStudent(st.id)} className="text-red-400 hover:text-red-600 text-xs px-1">حذف</button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
+          </div>
+
+          {/* قسم التقرير الجاهز للنسخ إلى الواتساب */}
+          <div className="bg-white p-4 rounded-xl shadow-sm space-y-3 border">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-gray-700 text-sm flex items-center gap-1">
+                💬 التقرير الجاهز للإرسال (واتساب)
+              </h3>
+              <button onClick={copyWhatsappText} className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs px-3 py-1.5 rounded-lg font-bold shadow flex items-center gap-1">
+                📋 نسخ النص
+              </button>
+            </div>
+
+            <textarea 
+              readOnly 
+              rows="7" 
+              value={generateWhatsappText()} 
+              className="w-full p-3 border rounded-lg font-mono text-xs bg-gray-50 text-gray-700 leading-relaxed"
+            />
           </div>
 
           {/* نافذة التقييم اليومي المتعدد السور */}
@@ -297,6 +444,7 @@
               circleId={selectedCircleId}
               circleName={selectedCircleObj ? selectedCircleObj.name : ''}
               date={date} 
+              existingEval={todayEvaluations.find(e => e.studentId === activeModalStudent.id)}
               onClose={() => setActiveModalStudent(null)} 
             />
           )}
@@ -307,11 +455,13 @@
     // ==========================================
     // 5. نافذة إضافة تقييم (تعدد السور للسُمّاع الواحدة)
     // ==========================================
-    function EvalModal({ student, circleId, circleName, date, onClose }) {
-      const [recitations, setRecitations] = React.useState([
-        { surah: JUZ_AMMA[0], rating: 'ممتاز' }
-      ]);
-      const [behavior, setBehavior] = React.useState('جيد');
+    function EvalModal({ student, circleId, circleName, date, existingEval, onClose }) {
+      const [recitations, setRecitations] = React.useState(
+        existingEval && existingEval.recitations 
+          ? existingEval.recitations 
+          : [{ surah: JUZ_AMMA[0], rating: 'ممتاز' }]
+      );
+      const [behavior, setBehavior] = React.useState(existingEval ? existingEval.behavior : 'جيد');
       const [saving, setSaving] = React.useState(false);
 
       const addSurahRow = () => {
@@ -332,16 +482,24 @@
       const save = async () => {
         setSaving(true);
         try {
-          await db.collection('evaluations').add({
-            studentId: student.id,
-            studentName: student.name,
-            circleId: circleId,
-            circleName: circleName,
-            date,
-            recitations: recitations, // حفظ قائمة السور المسمعة بالكامل
-            behavior: behavior,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp()
-          });
+          if (existingEval) {
+            await db.collection('evaluations').doc(existingEval.id).update({
+              recitations: recitations,
+              behavior: behavior,
+              timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+          } else {
+            await db.collection('evaluations').add({
+              studentId: student.id,
+              studentName: student.name,
+              circleId: circleId,
+              circleName: circleName,
+              date,
+              recitations: recitations,
+              behavior: behavior,
+              timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+          }
           alert(`تم حفظ تقييم الطالب (${student.name}) بنجاح!`);
           onClose();
         } catch(e) {
@@ -428,7 +586,7 @@
         fetchData();
       }, []);
 
-      // دالة خوارزمية حساب السلوك العام للطالب (الغالبية)
+      // دالة حساب السلوك العام للطالب (الغالبية)
       const calculateGeneralBehavior = (studentEvals) => {
         if (studentEvals.length === 0) return 'لا يوجد تقييمات';
         let goodCount = 0;
@@ -492,7 +650,6 @@
                                       </span>
                                     ))
                                   ) : (
-                                    /* دعم السجلات القديمة مفردة السورة */
                                     <span className="bg-white px-2 py-0.5 border rounded font-semibold text-emerald-800">
                                       سورة {ev.surah} ({ev.rating})
                                     </span>
