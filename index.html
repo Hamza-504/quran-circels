@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>نظام إدارة حلقات القرآن الكريم - المساجد</title>
+  <title>نظام إدارة حلقات القرآن الكريم الاحترافي</title>
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -53,7 +53,7 @@
     ];
 
     // ==========================================
-    // التطبيق الرئيسي مع جلب ملف المستخدم الأدوار
+    // 2. التطبيق الرئيسي
     // ==========================================
     function App() {
       const [user, setUser] = React.useState(null);
@@ -64,13 +64,18 @@
         const unsubscribe = auth.onAuthStateChanged(async (u) => {
           setUser(u);
           if (u) {
-            // جلب ملف المستخدم وصلاحياته
             const docRef = db.collection('users').doc(u.uid);
             const docSnap = await docRef.get();
             if (docSnap.exists) {
               setUserProfile(docSnap.data());
             } else {
-              setUserProfile(null); // ينقله لإكمال المعرف الخاص
+              setUserProfile({
+                uid: u.uid,
+                email: u.email,
+                username: u.email.split('@')[0],
+                role: 'viewer',
+                masjidId: null
+              });
             }
           } else {
             setUserProfile(null);
@@ -80,85 +85,14 @@
         return () => unsubscribe();
       }, []);
 
-      if (loading) return <div className="flex justify-center items-center h-screen text-emerald-800 font-bold">جاري التحميل...</div>;
-
-      if (!user) return <AuthScreen />;
-      if (user && !userProfile) return <OnboardingScreen user={user} onComplete={setUserProfile} />;
-
-      return <MainLayout user={user} userProfile={userProfile} />;
-    }
-
-    // ==========================================
-    // 2. شاشة إكمال البيانات (إدخال المعرف الخاص أول مرة)
-    // ==========================================
-    function OnboardingScreen({ user, onComplete }) {
-      const [username, setUsername] = React.useState('');
-      const [error, setError] = React.useState('');
-      const [submitting, setSubmitting] = React.useState(false);
-
-      const handleSubmit = async (e) => {
-        e.preventDefault();
-        const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '_');
-        if (!cleanUsername) return setError("يرجى أدخال المعرّف الخاص");
-
-        setSubmitting(true);
-        setError('');
-
-        try {
-          // التحقق من عدم تكرار اسم المستخدم
-          const checkSnap = await db.collection('users').where('username', '==', cleanUsername).get();
-          if (!checkSnap.empty) {
-            setSubmitting(false);
-            return setError("هذا المعرّف مستخدم بالفعل! اختر معرفاً آخر.");
-          }
-
-          const profileData = {
-            uid: user.uid,
-            email: user.email,
-            username: cleanUsername,
-            role: 'viewer', // متصفح افتراضياً
-            masjidId: null,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-          };
-
-          await db.collection('users').doc(user.uid).set(profileData);
-          onComplete(profileData);
-        } catch (err) {
-          setError("حدث خطأ: " + err.message);
-          setSubmitting(false);
-        }
-      };
-
-      return (
-        <div className="flex items-center justify-center min-h-screen p-4">
-          <div className="bg-white p-8 rounded-2xl shadow-md max-w-sm w-full space-y-4">
-            <h2 className="text-xl font-bold text-center text-emerald-800">مرحباً بك! 👋</h2>
-            <p className="text-xs text-center text-gray-500">اختر معرفاً خاصاً بكتُميّز به في النظام (مثال: ahmed_homs)</p>
-            
-            {error && <div className="bg-red-50 text-red-600 text-xs p-2 rounded border border-red-200">{error}</div>}
-
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">المعرّف الخاص (Username)</label>
-                <div className="flex items-center border rounded-lg overflow-hidden bg-gray-50 px-2">
-                  <span className="text-gray-400 font-bold text-sm">@</span>
-                  <input 
-                    type="text" 
-                    required 
-                    placeholder="username"
-                    value={username} 
-                    onChange={e => setUsername(e.target.value)} 
-                    className="w-full p-2 bg-transparent text-sm focus:outline-none" 
-                  />
-                </div>
-              </div>
-              <button disabled={submitting} type="submit" className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold shadow hover:bg-emerald-700 disabled:opacity-50">
-                {submitting ? 'جاري الحفظ...' : 'حفظ واستكمال'}
-              </button>
-            </form>
-          </div>
+      if (loading) return (
+        <div className="flex flex-col justify-center items-center h-screen bg-emerald-900 text-white font-bold gap-3">
+          <div className="w-10 h-10 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+          <span>جاري تحميل المنظومة...</span>
         </div>
       );
+
+      return user && userProfile ? <MainLayout user={user} userProfile={userProfile} /> : <AuthScreen />;
     }
 
     // ==========================================
@@ -167,40 +101,86 @@
     function AuthScreen() {
       const [email, setEmail] = React.useState('');
       const [password, setPassword] = React.useState('');
+      const [username, setUsername] = React.useState('');
       const [isSignUp, setIsSignUp] = React.useState(false);
+      const [loading, setLoading] = React.useState(false);
 
       const handleSubmit = async (e) => {
         e.preventDefault();
+        setLoading(true);
+
         try {
           if (isSignUp) {
-            await auth.createUserWithEmailAndPassword(email, password);
+            const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '_');
+            if (!cleanUsername) {
+              setLoading(false);
+              return alert("يرجى إدخال المعرّف الخاص!");
+            }
+
+            const checkSnap = await db.collection('users').where('username', '==', cleanUsername).get();
+            if (!checkSnap.empty) {
+              setLoading(false);
+              return alert("المعرّف الخاص مستخدم بالفعل!");
+            }
+
+            const res = await auth.createUserWithEmailAndPassword(email, password);
+            await db.collection('users').doc(res.user.uid).set({
+              uid: res.user.uid,
+              email: email,
+              username: cleanUsername,
+              role: 'viewer',
+              masjidId: null,
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
           } else {
             await auth.signInWithEmailAndPassword(email, password);
           }
         } catch (err) {
           alert("خطأ: " + err.message);
+        } finally {
+          setLoading(false);
         }
       };
 
       const handleGoogleSignIn = async () => {
         try {
           const provider = new firebase.auth.GoogleAuthProvider();
-          await auth.signInWithPopup(provider);
+          const res = await auth.signInWithPopup(provider);
+          
+          const docRef = db.collection('users').doc(res.user.uid);
+          const docSnap = await docRef.get();
+          if (!docSnap.exists) {
+            const defaultUser = res.user.email.split('@')[0].toLowerCase();
+            await docRef.set({
+              uid: res.user.uid,
+              email: res.user.email,
+              username: defaultUser,
+              role: 'viewer',
+              masjidId: null,
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+          }
         } catch (err) {
           alert("خطأ أثناء تسجيل الدخول بـ Google: " + err.message);
         }
       };
 
       return (
-        <div className="flex items-center justify-center min-h-screen p-4">
-          <div className="bg-white p-8 rounded-2xl shadow-md max-w-sm w-full space-y-4">
-            <h2 className="text-xl font-bold text-center text-emerald-800">🕌 نظام إدارة حلقات القرآن</h2>
-            <p className="text-xs text-center text-gray-500 font-bold">تسجيل الدخول للنظام العام</p>
-            
+        <div className="flex items-center justify-center min-h-screen p-4 bg-gray-100">
+          <div className="bg-white p-8 rounded-2xl shadow-xl max-w-sm w-full space-y-4 border border-gray-100">
+            <div className="text-center space-y-1">
+              <h2 className="text-2xl font-black text-emerald-800 flex items-center justify-center gap-2">
+                <span>🕌</span> المنظومة القرآنية
+              </h2>
+              <p className="text-xs text-gray-500 font-bold">
+                {isSignUp ? 'إنشاء حساب مستخدم جديد' : 'تسجيل الدخول للنظام'}
+              </p>
+            </div>
+
             <button 
               onClick={handleGoogleSignIn}
               type="button"
-              className="w-full flex items-center justify-center gap-2 bg-white border border-gray-300 text-gray-700 py-2 rounded-lg font-bold shadow-sm hover:bg-gray-50 transition text-sm"
+              className="w-full flex items-center justify-center gap-2 bg-white border border-gray-300 text-gray-700 py-2.5 rounded-xl font-bold shadow-sm hover:bg-gray-50 transition text-xs"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -208,30 +188,50 @@
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
               </svg>
-              <span>الدخول باستخدام Google</span>
+              <span>المتابعة عبر Google</span>
             </button>
 
             <div className="flex items-center my-2">
               <div className="flex-1 border-t border-gray-200"></div>
-              <span className="px-3 text-xs text-gray-400 font-bold">أو</span>
+              <span className="px-3 text-[11px] text-gray-400 font-bold">أو البريد الإلكتروني</span>
               <div className="flex-1 border-t border-gray-200"></div>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3">
+              {isSignUp && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">اسم المستخدم (Username)</label>
+                  <div className="flex items-center border rounded-lg overflow-hidden bg-gray-50 px-2 focus-within:ring-2 ring-emerald-500">
+                    <span className="text-gray-400 font-bold text-sm">@</span>
+                    <input 
+                      type="text" 
+                      required 
+                      placeholder="مثال: ahmed_homs" 
+                      value={username} 
+                      onChange={e => setUsername(e.target.value)} 
+                      className="w-full p-2 bg-transparent text-sm focus:outline-none" 
+                    />
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-gray-600 mb-1">البريد الإلكتروني</label>
-                <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full p-2 border rounded-lg text-sm" />
+                <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className="w-full p-2 border rounded-lg text-sm focus:ring-2 ring-emerald-500 outline-none" />
               </div>
+
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">كلمة المرور</label>
-                <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="w-full p-2 border rounded-lg text-sm" />
+                <label className="block text-xs font-bold text-gray-600 mb-1">كلمة المرور 🔒</label>
+                <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className="w-full p-2 border rounded-lg text-sm focus:ring-2 ring-emerald-500 outline-none" />
               </div>
-              <button type="submit" className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold shadow hover:bg-emerald-700">
-                {isSignUp ? 'إنشاء حساب جديد' : 'تسجيل الدخول'}
+
+              <button disabled={loading} type="submit" className="w-full bg-emerald-700 text-white py-2.5 rounded-lg font-bold shadow-md hover:bg-emerald-800 transition disabled:opacity-50 text-sm">
+                {loading ? 'جاري التحقق...' : (isSignUp ? 'إنشاء حساب محمي' : 'تسجيل الدخول')}
               </button>
             </form>
-            <button onClick={() => setIsSignUp(!isSignUp)} className="w-full text-xs text-emerald-700 underline text-center block">
-              {isSignUp ? 'لديك حساب؟ سجل دخولك' : 'حساب جديد؟ اضغط هنا'}
+
+            <button onClick={() => setIsSignUp(!isSignUp)} className="w-full text-xs text-emerald-800 font-bold underline text-center block pt-1">
+              {isSignUp ? 'لديك حساب بالفعل؟ سجل دخولك' : 'حساب جديد؟ اضغط هنا للإنشاء'}
             </button>
           </div>
         </div>
@@ -243,147 +243,251 @@
     // ==========================================
     function MainLayout({ user, userProfile }) {
       const [currentView, setCurrentView] = React.useState('dashboard');
+      const role = (userProfile.role || 'viewer').toLowerCase();
 
       const roleBadgeColor = {
-        admin: 'bg-red-500 text-white',
-        supervisor: 'bg-emerald-600 text-white',
+        admin: 'bg-red-600 text-white ring-2 ring-red-300',
+        supervisor: 'bg-emerald-600 text-white ring-2 ring-emerald-300',
         viewer: 'bg-gray-500 text-white'
-      }[userProfile.role] || 'bg-gray-400 text-white';
+      }[role] || 'bg-gray-400 text-white';
 
       const roleBadgeText = {
-        admin: 'مطور (Admin)',
-        supervisor: `مشرف (${userProfile.masjidId || 'غير محدد'})`,
-        viewer: 'متصفح'
-      }[userProfile.role];
+        admin: '👑 مطور بالنظام (Admin)',
+        supervisor: `🕌 مشرف (${userProfile.masjidId || 'جامع حمود الناصر'})`,
+        viewer: '👁️ متصفح'
+      }[role];
 
       return (
         <div className="min-h-screen flex flex-col">
-          <header className="bg-emerald-800 text-white px-4 md:px-6 py-3 shadow-md flex justify-between items-center sticky top-0 z-40">
-            <div className="font-bold text-xs md:text-sm flex items-center gap-2">
-              <span>🕌</span>
-              <span>تطبيق الحلقات</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${roleBadgeColor}`}>
-                @{userProfile.username} ({roleBadgeText})
-              </span>
+          <header className="bg-emerald-900 text-white px-4 md:px-8 py-3.5 shadow-lg flex justify-between items-center sticky top-0 z-40">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🕌</span>
+              <div>
+                <h1 className="font-bold text-sm md:text-base leading-tight">إدارة حلقات المساجد</h1>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-black shadow-sm ${roleBadgeColor}`}>
+                    @{userProfile.username} - {roleBadgeText}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {userProfile.role === 'admin' && (
+              {role === 'admin' && (
                 <button 
                   onClick={() => setCurrentView('users_admin')} 
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold shadow transition border ${currentView === 'users_admin' ? 'bg-amber-500 text-white border-amber-400' : 'bg-emerald-700 hover:bg-emerald-600 text-white border-emerald-500'}`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold shadow transition border flex items-center gap-1 ${currentView === 'users_admin' ? 'bg-amber-500 text-white border-amber-400' : 'bg-emerald-800 hover:bg-emerald-700 text-white border-emerald-600'}`}
                 >
-                  ⚙️ إدارة الصلاحيات
+                  <span>⚙️</span>
+                  <span className="hidden sm:inline">لوحة الإدارة والمساجد</span>
                 </button>
               )}
 
               {currentView === 'dashboard' ? (
                 <button 
                   onClick={() => setCurrentView('global_db')} 
-                  className="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold shadow transition border border-emerald-500"
+                  className="bg-emerald-800 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow transition border border-emerald-600 flex items-center gap-1"
                 >
-                  📊 البيانات التراكمية
+                  <span>📊</span>
+                  <span className="hidden sm:inline">السجل التراكمي</span>
                 </button>
               ) : (
                 <button 
                   onClick={() => setCurrentView('dashboard')} 
-                  className="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold shadow transition border border-emerald-500"
+                  className="bg-emerald-800 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow transition border border-emerald-600 flex items-center gap-1"
                 >
-                  🏠 إدارة الحلقات
+                  <span>🏠</span>
+                  <span className="hidden sm:inline">إدارة الحلقات</span>
                 </button>
               )}
               
               <button 
                 onClick={() => auth.signOut()} 
-                className="bg-red-600 hover:bg-red-700 text-white text-xs px-2.5 py-1.5 rounded-lg font-bold shadow"
+                className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg font-bold shadow"
               >
                 خروج
               </button>
             </div>
           </header>
 
-          <main className="flex-1 max-w-4xl w-full mx-auto p-4">
+          <main className="flex-1 max-w-5xl w-full mx-auto p-4 md:p-6">
             {currentView === 'dashboard' && <Dashboard userProfile={userProfile} />}
-            {currentView === 'global_db' && <GlobalDatabaseView />}
-            {currentView === 'users_admin' && userProfile.role === 'admin' && <AdminUsersPanel />}
+            {currentView === 'global_db' && <GlobalDatabaseView userProfile={userProfile} />}
+            {currentView === 'users_admin' && role === 'admin' && <AdminUsersPanel />}
           </main>
         </div>
       );
     }
 
     // ==========================================
-    // 5. لوحة المطور (إدارة المستخدمين والأدوار)
+    // 5. لوحة المطور الاحترافية (إدارة المساجد والمشرفين)
     // ==========================================
     function AdminUsersPanel() {
       const [usersList, setUsersList] = React.useState([]);
+      const [circlesCount, setCirclesCount] = React.useState(0);
+      const [studentsCount, setStudentsCount] = React.useState(0);
       const [loading, setLoading] = React.useState(true);
+      const [searchTerm, setSearchTerm] = React.useState('');
 
       React.useEffect(() => {
-        const unsub = db.collection('users').onSnapshot(snap => {
+        const unsubUsers = db.collection('users').onSnapshot(snap => {
           setUsersList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
           setLoading(false);
         });
-        return () => unsub();
+
+        db.collection('circles').get().then(snap => setCirclesCount(snap.size));
+        db.collection('students').get().then(snap => setStudentsCount(snap.size));
+
+        return () => unsubUsers();
       }, []);
 
-      const updateUserRole = async (targetUid, newRole) => {
-        let masjidId = null;
-        if (newRole === 'supervisor') {
-          masjidId = prompt("أدخل اسم/معرف المسجد للمشرف (مثال: جامع حمود الناصر):", "جامع حمود الناصر");
-          if (!masjidId) return;
+      const updateUserRoleAndMasjid = async (userDoc) => {
+        const currentRole = (userDoc.role || 'viewer').toLowerCase();
+        const newRole = prompt("اختر الدور الجديد للمستخدم (admin / supervisor / viewer):", currentRole);
+        if (!newRole) return;
+
+        const cleanRole = newRole.trim().toLowerCase();
+        if (!['admin', 'supervisor', 'viewer'].includes(cleanRole)) {
+          return alert("دور غير صالح! يرجى كتابة admin أو supervisor أو viewer.");
+        }
+
+        let masjidId = userDoc.masjidId;
+        if (cleanRole === 'supervisor') {
+          masjidId = prompt("أدخل اسم المسجد المخصص لهذا المشرف:", userDoc.masjidId || "جامع حمود الناصر");
+          if (!masjidId) masjidId = "جامع حمود الناصر";
         }
 
         try {
-          await db.collection('users').doc(targetUid).update({
-            role: newRole,
-            masjidId: masjidId
+          await db.collection('users').doc(userDoc.id).update({
+            role: cleanRole,
+            masjidId: cleanRole === 'supervisor' ? masjidId : (cleanRole === 'admin' ? 'كل المساجد' : null)
           });
-          alert("تم تحديث صلاحية المستخدم بنجاح!");
+          alert("تم تحديث حساب المستخدم بنجاح!");
         } catch (e) {
-          alert("خطأ أثناء التحديث: " + e.message);
+          alert("حدث خطأ أثناء التحديث: " + e.message);
         }
       };
 
-      if (loading) return <div className="text-center py-8 font-bold text-emerald-800">جاري تحميل قائمة المستخدمين...</div>;
+      const editMasjidNameDirectly = async (userDoc) => {
+        const newMasjid = prompt("تعديل اسم المسجد المخصص لهذا المشرف:", userDoc.masjidId || "جامع حمود الناصر");
+        if (newMasjid && newMasjid.trim()) {
+          await db.collection('users').doc(userDoc.id).update({
+            masjidId: newMasjid.trim()
+          });
+          alert("تم التحديث!");
+        }
+      };
+
+      if (loading) return <div className="text-center py-12 font-bold text-emerald-800">جاري التحميل...</div>;
+
+      const supervisors = usersList.filter(u => (u.role || '').toLowerCase() === 'supervisor');
+      const uniqueMasjids = Array.from(new Set(supervisors.map(s => s.masjidId).filter(Boolean)));
+      
+      const filteredUsers = usersList.filter(u => 
+        (u.username || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+        (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (u.masjidId || '').toLowerCase().includes(searchTerm.toLowerCase())
+      );
 
       return (
-        <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-          <div className="border-b pb-3">
-            <h2 className="text-lg font-bold text-red-700 flex items-center gap-2">
-              ⚙️ لوحة المطور - توزيع الأدوار والصلاحيات
-            </h2>
-            <p className="text-xs text-gray-500">يمكنك ترقية المتصفحين إلى مشرفين وتحديد المسجد المخصص لهم</p>
+        <div className="space-y-6">
+          {/* كروت الإحصائيات العامة */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+              <span className="text-2xl">🕌</span>
+              <div className="text-xl font-black text-gray-800 mt-1">{uniqueMasjids.length || 1}</div>
+              <div className="text-xs text-gray-500 font-bold">المساجد المسجلة</div>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+              <span className="text-2xl">👨‍🏫</span>
+              <div className="text-xl font-black text-emerald-700 mt-1">{supervisors.length}</div>
+              <div className="text-xs text-gray-500 font-bold">المشرفين النشطين</div>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+              <span className="text-2xl">📖</span>
+              <div className="text-xl font-black text-blue-700 mt-1">{circlesCount}</div>
+              <div className="text-xs text-gray-500 font-bold">الحلقات القرآنية</div>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+              <span className="text-2xl">👥</span>
+              <div className="text-xl font-black text-purple-700 mt-1">{studentsCount}</div>
+              <div className="text-xs text-gray-500 font-bold">إجمالي الطلاب</div>
+            </div>
           </div>
 
-          <div className="divide-y">
-            {usersList.map(u => (
-              <div key={u.id} className="py-3 flex flex-wrap justify-between items-center gap-2">
-                <div>
-                  <div className="font-bold text-sm text-gray-800">@{u.username || 'بدون_معرف'}</div>
-                  <div className="text-xs text-gray-400">{u.email}</div>
-                  {u.masjidId && <div className="text-[11px] text-emerald-600 font-bold">المسجد: {u.masjidId}</div>}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <select 
-                    value={u.role || 'viewer'} 
-                    onChange={e => updateUserRole(u.id, e.target.value)}
-                    className="p-1.5 border rounded-lg text-xs font-bold bg-gray-50"
-                  >
-                    <option value="viewer">متصفح (Viewer)</option>
-                    <option value="supervisor">مشرف (Supervisor)</option>
-                    <option value="admin">مطور (Admin)</option>
-                  </select>
-                </div>
+          {/* لوحة التحكم بالمستخدمين */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border space-y-4">
+            <div className="flex flex-wrap justify-between items-center gap-2 border-b pb-4">
+              <div>
+                <h2 className="text-lg font-bold text-red-700 flex items-center gap-2">
+                  <span>⚙️</span> إدارة الصلاحيات والمساجد والمشرفين
+                </h2>
+                <p className="text-xs text-gray-500">من هنا يمكنك إعطاء الصلاحيات وتعيين مشرف كل مسجد</p>
               </div>
-            ))}
+
+              <input 
+                type="text" 
+                placeholder="بحث عن مستخدم أو مسجد..." 
+                value={searchTerm} 
+                onChange={e => setSearchTerm(e.target.value)} 
+                className="p-2 border rounded-xl text-xs font-bold w-full sm:w-64 focus:ring-2 ring-emerald-500 outline-none" 
+              />
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-600 font-bold border-b">
+                    <th className="p-3">المستخدم</th>
+                    <th className="p-3">البريد الإلكتروني</th>
+                    <th className="p-3">الدور الحسابي</th>
+                    <th className="p-3">المسجد المخصص</th>
+                    <th className="p-3 text-center">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredUsers.map(u => {
+                    const uRole = (u.role || 'viewer').toLowerCase();
+                    return (
+                      <tr key={u.id} className="hover:bg-gray-50 transition">
+                        <td className="p-3 font-bold text-gray-800">@{u.username || 'بدون'}</td>
+                        <td className="p-3 text-gray-500">{u.email}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded font-black text-[10px] ${uRole === 'admin' ? 'bg-red-100 text-red-800' : (uRole === 'supervisor' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700')}`}>
+                            {uRole === 'admin' ? 'مطور Admin' : (uRole === 'supervisor' ? 'مشرف Supervisor' : 'متصفح Viewer')}
+                          </span>
+                        </td>
+                        <td className="p-3 font-bold">
+                          {uRole === 'supervisor' ? (
+                            <div className="flex items-center gap-1 text-emerald-800">
+                              <span>🕌 {u.masjidId || 'جامع حمود الناصر'}</span>
+                              <button onClick={() => editMasjidNameDirectly(u)} className="text-[10px] text-gray-400 hover:text-emerald-700">✏️</button>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">{uRole === 'admin' ? 'كل المساجد 🌐' : 'غير مخصص'}</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-center">
+                          <button 
+                            onClick={() => updateUserRoleAndMasjid(u)}
+                            className="bg-gray-100 hover:bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1 rounded-lg font-bold text-xs transition"
+                          >
+                            تعديل الصلاحية / المسجد ✏️
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       );
     }
 
     // ==========================================
-    // 6. لوحة التحكم الرئيسية (مع القيود حسب الصلاحية)
+    // 6. لوحة التحكم الرئيسية (ادارة الحلقات والطلاب)
     // ==========================================
     function Dashboard({ userProfile }) {
       const [circles, setCircles] = React.useState([]);
@@ -393,28 +497,35 @@
       const [newStudentName, setNewStudentName] = React.useState('');
       const [date, setDate] = React.useState(new Date().toISOString().split('T')[0]);
       
+      const [selectedMasjidFilter, setSelectedMasjidFilter] = React.useState('ALL');
       const [lessonTopic, setLessonTopic] = React.useState('');
       const [todayEvaluations, setTodayEvaluations] = React.useState([]);
       const [absentStudents, setAbsentStudents] = React.useState({});
       const [activeModalStudent, setActiveModalStudent] = React.useState(null);
 
-      const canEdit = userProfile.role === 'admin' || userProfile.role === 'supervisor';
+      const role = (userProfile.role || 'viewer').toLowerCase();
+      const canEdit = role === 'admin' || role === 'supervisor';
 
       React.useEffect(() => {
-        const unsub = db.collection('circles')
-          .onSnapshot(snap => {
-            let list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            // إذا كان مشرفاً، يرى حلقات مسجده فقط (أو الكل إذا كان مطوراً أو متصفحاً)
-            if (userProfile.role === 'supervisor' && userProfile.masjidId) {
-              list = list.filter(c => !c.masjidId || c.masjidId === userProfile.masjidId);
-            }
-            setCircles(list);
-            if (list.length > 0 && !selectedCircleId) {
-              setSelectedCircleId(list[0].id);
-            }
-          });
+        const unsub = db.collection('circles').onSnapshot(snap => {
+          let list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          
+          if (role === 'supervisor') {
+            const myMasjid = userProfile.masjidId || 'جامع حمود الناصر';
+            list = list.filter(c => !c.masjidId || c.masjidId === myMasjid);
+          } else if (role === 'admin' && selectedMasjidFilter !== 'ALL') {
+            list = list.filter(c => c.masjidId === selectedMasjidFilter);
+          }
+
+          setCircles(list);
+          if (list.length > 0 && (!selectedCircleId || !list.find(c => c.id === selectedCircleId))) {
+            setSelectedCircleId(list[0].id);
+          } else if (list.length === 0) {
+            setSelectedCircleId('');
+          }
+        });
         return () => unsub();
-      }, [userProfile]);
+      }, [userProfile, role, selectedMasjidFilter]);
 
       React.useEffect(() => {
         if (!selectedCircleId) { 
@@ -465,9 +576,13 @@
 
       const addCircle = async () => {
         if (!canEdit || !newCircleName.trim()) return;
+        const targetMasjid = role === 'admin' 
+          ? (selectedMasjidFilter === 'ALL' ? 'جامع حمود الناصر' : selectedMasjidFilter)
+          : (userProfile.masjidId || 'جامع حمود الناصر');
+
         await db.collection('circles').add({ 
           name: newCircleName.trim(), 
-          masjidId: userProfile.masjidId || 'عام',
+          masjidId: targetMasjid,
           createdBy: userProfile.username 
         });
         setNewCircleName('');
@@ -554,6 +669,7 @@
         if (!selectedCircleObj) return '';
 
         let text = `السلام عليكم ورحمة الله وبركاته\n*تقرير حلقة: ${selectedCircleObj.name}*\n`;
+        text += `*المسجد:* ${selectedCircleObj.masjidId || 'مسجد عام'}\n`;
         text += `*التاريخ:* ${formatDateToArabic(date)}\n`;
         if (lessonTopic.trim()) {
           text += `*الدرس النظري/التجويدي:* ${lessonTopic.trim()}\n`;
@@ -600,45 +716,60 @@
 
       return (
         <div className="space-y-4">
-          {/* تنبيه للمتصفح العادي */}
           {!canEdit && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl text-xs font-bold text-center">
-              👀 أنت تتصفح التطبيق بحساب (قراءة فقط). لتعديل أو إضافة حلقات، تواصل مع أدمن التطبيق لترقية حسابك إلى مشرف.
+            <div className="bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded-xl text-xs font-bold text-center">
+              👀 أنت تتصفح التطبيق وضع (القراءة فقط). لتعديل البيانات، تواصل مع الأدمن لترقية حسابك إلى مشرف.
             </div>
           )}
 
-          <div className="bg-white p-4 rounded-xl shadow-sm space-y-3 border">
+          {/* ترويسة اختيار المسجد والحلقة */}
+          <div className="bg-white p-5 rounded-2xl shadow-sm space-y-4 border border-gray-200">
+            {role === 'admin' && (
+              <div className="flex items-center gap-2 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+                <span className="text-xs font-black text-emerald-900">🌐 تصفح بصلاحية المطور:</span>
+                <select 
+                  value={selectedMasjidFilter} 
+                  onChange={e => setSelectedMasjidFilter(e.target.value)}
+                  className="flex-1 p-1.5 border rounded-lg text-xs font-bold bg-white text-emerald-900 outline-none"
+                >
+                  <option value="ALL">عرض كل المساجد والحلقات</option>
+                  <option value="جامع حمود الناصر">جامع حمود الناصر</option>
+                </select>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2 items-center">
-              <label className="text-xs font-bold text-gray-600">اختر الحلقة:</label>
-              <select value={selectedCircleId} onChange={e => setSelectedCircleId(e.target.value)} className="flex-1 min-w-[180px] p-2 border rounded-lg text-sm font-bold">
-                {circles.length === 0 ? <option>لا يوجد حلقات متاحة</option> : circles.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <label className="text-xs font-bold text-gray-700">اختر الحلقة القرآنية:</label>
+              <select value={selectedCircleId} onChange={e => setSelectedCircleId(e.target.value)} className="flex-1 min-w-[200px] p-2 border rounded-xl text-sm font-bold bg-gray-50 focus:bg-white outline-none">
+                {circles.length === 0 ? <option>لا يوجد حلقات متاحة حالياً</option> : circles.map(c => <option key={c.id} value={c.id}>{c.name} ({c.masjidId || 'مسجد عام'})</option>)}
               </select>
 
               {canEdit && selectedCircleObj && (
                 <div className="flex gap-1">
-                  <button onClick={() => editCircleName(selectedCircleObj)} title="تعديل اسم الحلقة" className="bg-amber-50 text-amber-700 border border-amber-300 p-2 rounded-lg text-xs font-bold hover:bg-amber-100">✏️</button>
-                  <button onClick={() => deleteCircle(selectedCircleObj)} title="حذف الحلقة" className="bg-red-50 text-red-700 border border-red-300 p-2 rounded-lg text-xs font-bold hover:bg-red-100">🗑️</button>
+                  <button onClick={() => editCircleName(selectedCircleObj)} title="تعديل اسم الحلقة" className="bg-amber-50 text-amber-700 border border-amber-300 p-2 rounded-xl text-xs font-bold hover:bg-amber-100">✏️</button>
+                  <button onClick={() => deleteCircle(selectedCircleObj)} title="حذف الحلقة" className="bg-red-50 text-red-700 border border-red-300 p-2 rounded-xl text-xs font-bold hover:bg-red-100">🗑️</button>
                 </div>
               )}
             </div>
 
             {canEdit && (
               <div className="flex gap-2 pt-2 border-t">
-                <input type="text" placeholder="اسم حلقة جديدة" value={newCircleName} onChange={e => setNewCircleName(e.target.value)} className="flex-1 p-2 border rounded-lg text-sm" />
-                <button onClick={addCircle} className="bg-emerald-700 text-white px-3 py-2 rounded-lg text-sm font-bold shadow hover:bg-emerald-800">+ إضافة حلقة</button>
+                <input type="text" placeholder="اسم حلقة جديدة" value={newCircleName} onChange={e => setNewCircleName(e.target.value)} className="flex-1 p-2 border rounded-xl text-sm focus:ring-2 ring-emerald-500 outline-none" />
+                <button onClick={addCircle} className="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow hover:bg-emerald-800 transition">+ إضافة حلقة</button>
               </div>
             )}
 
             <div className="flex items-center gap-2 pt-2 border-t">
-              <label className="text-xs font-bold text-gray-600">التاريخ:</label>
+              <label className="text-xs font-bold text-gray-600">التاريخ اليومي:</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} className="p-1.5 border rounded-lg text-xs font-bold" />
-              <span className="text-xs text-gray-500 font-bold bg-gray-100 px-2 py-1 rounded">({formatDateToArabic(date)})</span>
+              <span className="text-xs text-gray-500 font-bold bg-gray-100 px-2.5 py-1 rounded-md">({formatDateToArabic(date)})</span>
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-xl shadow-sm space-y-2 border">
-            <h3 className="font-bold text-emerald-800 text-sm flex items-center gap-1">
-              📚 الدرس النظري / التجويدي لليوم
+          {/* الدرس اليومي */}
+          <div className="bg-white p-4 rounded-2xl shadow-sm space-y-2 border border-gray-200">
+            <h3 className="font-bold text-emerald-900 text-sm flex items-center gap-1.5">
+              <span>📚</span> الدرس النظري / التجويدي لليوم
             </h3>
             <input 
               type="text" 
@@ -646,17 +777,18 @@
               placeholder={canEdit ? "مثال: أحكام النون الساكنة والتنوين" : "لم يحدد درس اليوم بعد"} 
               value={lessonTopic} 
               onChange={e => saveLessonTopic(e.target.value)}
-              className={`w-full p-2 border rounded-lg text-sm ${canEdit ? 'bg-gray-50 focus:bg-white' : 'bg-gray-100 text-gray-600'}`}
+              className={`w-full p-2.5 border rounded-xl text-sm outline-none ${canEdit ? 'bg-gray-50 focus:bg-white focus:ring-2 ring-emerald-500' : 'bg-gray-100 text-gray-600'}`}
             />
           </div>
 
-          <div className="bg-white p-4 rounded-xl shadow-sm space-y-3 border">
-            <h3 className="font-bold text-gray-700 text-sm">قائمة الطلاب ({students.length})</h3>
+          {/* جدول الطلاب والحضور والتقييم */}
+          <div className="bg-white p-5 rounded-2xl shadow-sm space-y-3 border border-gray-200">
+            <h3 className="font-bold text-gray-800 text-sm">قائمة الطلاب ({students.length})</h3>
             
             {canEdit && (
               <div className="flex gap-2">
-                <input type="text" placeholder="اسم طالب جديد" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="flex-1 p-2 border rounded-lg text-sm" />
-                <button onClick={addStudent} className="bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow hover:bg-emerald-800">+ إضافة طالب</button>
+                <input type="text" placeholder="اسم طالب جديد" value={newStudentName} onChange={e => setNewStudentName(e.target.value)} className="flex-1 p-2 border rounded-xl text-sm focus:ring-2 ring-emerald-500 outline-none" />
+                <button onClick={addStudent} className="bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow hover:bg-emerald-800 transition">+ إضافة طالب</button>
               </div>
             )}
 
@@ -666,7 +798,7 @@
                 const isAbsent = !!absentStudents[st.id];
 
                 return (
-                  <div key={st.id} className={`py-2.5 flex justify-between items-center ${isAbsent ? 'bg-red-50/50 px-2 rounded-lg' : ''}`}>
+                  <div key={st.id} className={`py-3 flex justify-between items-center ${isAbsent ? 'bg-red-50/50 px-3 rounded-xl' : ''}`}>
                     <div className="flex items-center gap-3">
                       {canEdit ? (
                         <label className="flex items-center gap-1.5 cursor-pointer">
@@ -691,8 +823,8 @@
                           {st.name}
                         </span>
                         {evalDoc && !isAbsent && evalDoc.recitations && evalDoc.recitations.length > 0 && (
-                          <span className="text-[11px] text-emerald-600 font-semibold block mt-0.5">
-                            ✓ تم التقييم لليوم
+                          <span className="text-[11px] text-emerald-700 font-bold block mt-0.5">
+                            ✓ تم تسجيل التقييم لليوم
                           </span>
                         )}
                       </div>
@@ -700,12 +832,12 @@
 
                     <div className="flex gap-2 items-center">
                       {!isAbsent && canEdit && (
-                        <button onClick={() => setActiveModalStudent(st)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-700 shadow">
+                        <button onClick={() => setActiveModalStudent(st)} className="bg-emerald-700 text-white text-xs px-3.5 py-1.5 rounded-xl font-bold hover:bg-emerald-800 shadow-sm transition">
                           {evalDoc && evalDoc.recitations && evalDoc.recitations.length > 0 ? 'تعديل التقييم 📝' : 'إضافة تقييم اليوم 📝'}
                         </button>
                       )}
                       {canEdit && (
-                        <button onClick={() => deleteStudent(st.id)} className="text-red-400 hover:text-red-600 text-xs px-1">حذف</button>
+                        <button onClick={() => deleteStudent(st.id)} className="text-red-400 hover:text-red-600 text-xs px-2 font-bold">حذف</button>
                       )}
                     </div>
                   </div>
@@ -714,13 +846,14 @@
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-xl shadow-sm space-y-3 border">
+          {/* التقرير الجاهز للواتساب */}
+          <div className="bg-white p-5 rounded-2xl shadow-sm space-y-3 border border-gray-200">
             <div className="flex justify-between items-center">
-              <h3 className="font-bold text-gray-700 text-sm flex items-center gap-1">
-                💬 التقرير الجاهز للإرسال (واتساب)
+              <h3 className="font-bold text-gray-800 text-sm flex items-center gap-1.5">
+                <span>💬</span> التقرير الجاهز للإرسال (واتساب)
               </h3>
-              <button onClick={copyWhatsappText} className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs px-3 py-1.5 rounded-lg font-bold shadow flex items-center gap-1">
-                📋 نسخ النص
+              <button onClick={copyWhatsappText} className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs px-3.5 py-1.5 rounded-xl font-bold shadow flex items-center gap-1 transition">
+                <span>📋</span> نسخ النص
               </button>
             </div>
 
@@ -728,7 +861,7 @@
               readOnly 
               rows="8" 
               value={generateWhatsappText()} 
-              className="w-full p-3 border rounded-lg font-mono text-xs bg-gray-50 text-gray-700 leading-relaxed"
+              className="w-full p-3.5 border rounded-xl font-mono text-xs bg-gray-50 text-gray-700 leading-relaxed outline-none"
             />
           </div>
 
@@ -807,8 +940,8 @@
 
       return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white p-6 rounded-xl max-w-md w-full space-y-4 max-h-[90vh] flex flex-col">
-            <h3 className="font-bold text-emerald-800 text-base border-b pb-2">تقييم اليوم: {student.name} ({formatDateToArabic(date)})</h3>
+          <div className="bg-white p-6 rounded-2xl max-w-md w-full space-y-4 max-h-[90vh] flex flex-col shadow-2xl">
+            <h3 className="font-bold text-emerald-900 text-base border-b pb-2">تقييم الطالب: {student.name} ({formatDateToArabic(date)})</h3>
             
             <div className="flex-1 overflow-y-auto space-y-3 pl-1">
               <div className="flex justify-between items-center">
@@ -817,13 +950,13 @@
               </div>
 
               {recitations.map((item, idx) => (
-                <div key={idx} className="bg-gray-50 p-3 rounded-lg border space-y-2 relative">
+                <div key={idx} className="bg-gray-50 p-3 rounded-xl border space-y-2 relative">
                   {recitations.length > 1 && (
                     <button onClick={() => removeSurahRow(idx)} className="absolute top-1 left-2 text-red-500 font-bold text-xs">✕</button>
                   )}
                   <div>
                     <label className="block text-[10px] font-bold text-gray-500 mb-1">اختر السورة:</label>
-                    <select value={item.surah} onChange={e => updateRecitation(idx, 'surah', e.target.value)} className="w-full p-1.5 border rounded text-xs font-bold">
+                    <select value={item.surah} onChange={e => updateRecitation(idx, 'surah', e.target.value)} className="w-full p-1.5 border rounded-lg text-xs font-bold bg-white">
                       {JUZ_AMMA.map(s => <option key={s} value={s}>سورة {s}</option>)}
                     </select>
                   </div>
@@ -831,7 +964,7 @@
                     <label className="block text-[10px] font-bold text-gray-500 mb-1">تقييم الحفظ:</label>
                     <div className="flex gap-1">
                       {['إعادة', 'جيد', 'جيد جداً', 'ممتاز'].map(r => (
-                        <button key={r} onClick={() => updateRecitation(idx, 'rating', r)} className={`flex-1 p-1 text-[11px] border rounded font-bold ${item.rating === r ? 'bg-emerald-600 text-white' : 'bg-white text-gray-700'}`}>{r}</button>
+                        <button key={r} onClick={() => updateRecitation(idx, 'rating', r)} className={`flex-1 p-1 text-[11px] border rounded-lg font-bold transition ${item.rating === r ? 'bg-emerald-700 text-white' : 'bg-white text-gray-700'}`}>{r}</button>
                       ))}
                     </div>
                   </div>
@@ -842,17 +975,17 @@
                 <label className="block text-xs font-bold text-gray-700 mb-1">تقييم السلوك لليوم:</label>
                 <div className="flex gap-2">
                   {['جيد', 'بحاجة تحسين'].map(b => (
-                    <button key={b} onClick={() => setBehavior(b)} className={`flex-1 p-2 text-xs border rounded-lg font-bold ${behavior === b ? 'bg-emerald-600 text-white' : 'bg-gray-50 text-gray-700'}`}>{b}</button>
+                    <button key={b} onClick={() => setBehavior(b)} className={`flex-1 p-2 text-xs border rounded-xl font-bold transition ${behavior === b ? 'bg-emerald-700 text-white' : 'bg-gray-50 text-gray-700'}`}>{b}</button>
                   ))}
                 </div>
               </div>
             </div>
 
             <div className="pt-2 space-y-2 border-t">
-              <button disabled={saving} onClick={save} className="w-full bg-emerald-600 text-white py-2 rounded-lg font-bold shadow hover:bg-emerald-700 disabled:opacity-50">
+              <button disabled={saving} onClick={save} className="w-full bg-emerald-700 text-white py-2.5 rounded-xl font-bold shadow hover:bg-emerald-800 transition disabled:opacity-50">
                 {saving ? 'جاري الحفظ...' : 'حفظ التقييم الإجمالي'}
               </button>
-              <button onClick={onClose} className="w-full bg-gray-100 text-gray-600 py-1.5 rounded-lg text-sm font-bold">إغلاق</button>
+              <button onClick={onClose} className="w-full bg-gray-100 text-gray-600 py-2 rounded-xl text-sm font-bold">إغلاق</button>
             </div>
           </div>
         </div>
@@ -860,9 +993,9 @@
     }
 
     // ==========================================
-    // 8. لائحة البيانات العامة (التراكمية)
+    // 8. لائحة البيانات العامة التراكمية
     // ==========================================
-    function GlobalDatabaseView() {
+    function GlobalDatabaseView({ userProfile }) {
       const [circles, setCircles] = React.useState([]);
       const [students, setStudents] = React.useState([]);
       const [evaluations, setEvaluations] = React.useState([]);
@@ -896,25 +1029,25 @@
         return goodCount >= needsImpCount ? 'السلوك العام: جيد' : 'السلوك العام: بحاجة تحسين';
       };
 
-      if (loading) return <div className="text-center py-10 font-bold text-emerald-800">جاري تحميل لائحة البيانات العامة...</div>;
+      if (loading) return <div className="text-center py-12 font-bold text-emerald-800">جاري تحميل السجل التراكمي العام...</div>;
 
       return (
         <div className="space-y-6">
-          <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl text-center">
-            <h2 className="text-lg font-bold text-emerald-900">📊 السجل التراكمي العام للمساجد</h2>
-            <p className="text-xs text-emerald-700 mt-1">عرض السور المسمّعة والسلوك العام لجميع الطلاب</p>
+          <div className="bg-emerald-900 text-white p-6 rounded-2xl shadow-md text-center space-y-1">
+            <h2 className="text-xl font-black">📊 السجل التراكمي الشامل لجميع المساجد والحلقات</h2>
+            <p className="text-xs text-emerald-200">عرض تاريخ التسميع التراكمي والسلوك الإجمالي لكافة الطلاب</p>
           </div>
 
           {circles.map(circle => {
             const circleStudents = students.filter(s => s.circleId === circle.id);
             return (
-              <div key={circle.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-                <div className="bg-emerald-800 text-white px-4 py-2 font-bold text-sm flex justify-between">
-                  <span>🕌 حلقة: {circle.name}</span>
-                  <span className="text-xs font-normal opacity-80">{circle.masjidId || 'مسجد عام'}</span>
+              <div key={circle.id} className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="bg-emerald-800 text-white px-5 py-3 font-bold text-sm flex justify-between items-center">
+                  <span className="flex items-center gap-2"><span>🕌</span> حلقة: {circle.name}</span>
+                  <span className="text-xs font-bold bg-emerald-900/60 px-2.5 py-1 rounded-lg border border-emerald-700">{circle.masjidId || 'مسجد عام'}</span>
                 </div>
 
-                <div className="p-4 space-y-4 divide-y">
+                <div className="p-5 space-y-4 divide-y">
                   {circleStudents.length === 0 ? (
                     <p className="text-xs text-gray-400">لا يوجد طلاب مسجلون في هذه الحلقة.</p>
                   ) : (
@@ -925,28 +1058,28 @@
                       return (
                         <div key={student.id} className="pt-3 space-y-2">
                           <div className="flex justify-between items-center">
-                            <span className="font-bold text-base text-gray-800">👤 {student.name}</span>
-                            <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${generalBehavior.includes('جيد') ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                            <span className="font-bold text-sm md:text-base text-gray-800">👤 {student.name}</span>
+                            <span className={`text-xs px-3 py-1 rounded-full font-bold ${generalBehavior.includes('جيد') ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-amber-100 text-amber-800 border border-amber-300'}`}>
                               {generalBehavior}
                             </span>
                           </div>
 
-                          <div className="bg-gray-50 p-3 rounded-lg border text-xs space-y-1.5">
+                          <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs space-y-1.5">
                             <span className="font-bold text-gray-600 block mb-1">📖 السور المسمّعة والتاريخ:</span>
                             {studentEvals.length === 0 ? (
                               <span className="text-gray-400">لم يقم بالتسميع بعد.</span>
                             ) : (
                               studentEvals.map((ev, i) => (
-                                <div key={i} className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-1 last:border-0">
-                                  <span className="text-gray-400 font-mono">[{formatDateToArabic(ev.date)}]</span>
+                                <div key={i} className="flex flex-wrap items-center gap-2 border-b border-gray-200/60 pb-1.5 last:border-0">
+                                  <span className="text-gray-400 font-mono text-[11px]">[{formatDateToArabic(ev.date)}]</span>
                                   {ev.recitations && ev.recitations.length > 0 ? (
                                     ev.recitations.map((r, rIdx) => (
-                                      <span key={rIdx} className="bg-white px-2 py-0.5 border rounded font-semibold text-emerald-800">
+                                      <span key={rIdx} className="bg-white px-2.5 py-1 border border-gray-200 rounded-lg font-bold text-emerald-800 shadow-sm">
                                         سورة {r.surah} ({r.rating})
                                       </span>
                                     ))
                                   ) : ev.surah ? (
-                                    <span className="bg-white px-2 py-0.5 border rounded font-semibold text-emerald-800">
+                                    <span className="bg-white px-2.5 py-1 border border-gray-200 rounded-lg font-bold text-emerald-800 shadow-sm">
                                       سورة {ev.surah} ({ev.rating})
                                     </span>
                                   ) : null}
